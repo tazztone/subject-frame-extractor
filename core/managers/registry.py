@@ -346,3 +346,108 @@ class ModelRegistry:
                 token=config.huggingface_token if config else None,
             )
         return SAM3Wrapper(str(checkpoint_path), device=device, config=config)
+
+    def get_analysis_models(
+        self, params: Any, config: Optional["Config"] = None, logger: Optional["LoggerLike"] = None
+    ) -> dict:
+        """Downloads, initializes, and returns the requested ML models under a unified registry seam."""
+        import cv2
+
+        from core.error_handling import ErrorHandler
+        from core.io_utils import download_model
+        from core.managers.face import get_face_landmarker
+        from core.models import AnalysisParameters
+
+        if isinstance(params, dict):
+            params = AnalysisParameters(**params)
+
+        _config = config or self.config
+        if _config is None and hasattr(self.logger, "config"):
+            _config = self.logger.config  # type: ignore
+        if _config is None:
+            raise ValueError("No configuration available in ModelRegistry")
+
+        _logger = logger or self.logger
+        device = self.runtime_device_override or ("cuda" if torch.cuda.is_available() else "cpu")
+
+        face_analyzer, ref_emb, face_landmarker = None, None, None
+
+        if params.compute_face_sim:
+            face_analyzer = self.get_face_analyzer(
+                model_name=params.face_model_name,
+                det_size_tuple=tuple(_config.model_face_analyzer_det_size),
+                device=device,
+            )
+            if face_analyzer and params.face_ref_img_path:
+                ref_path = Path(params.face_ref_img_path)
+                if ref_path.exists() and ref_path.is_file():
+                    try:
+                        ref_img = cv2.imread(str(ref_path))
+                        if ref_img is not None:
+                            faces = face_analyzer.get(ref_img)
+                            if faces:
+                                ref_emb = max(faces, key=lambda x: x.det_score).normed_embedding
+                                _logger.info("Reference face embedding created successfully.")
+                    except Exception as e:
+                        _logger.error(f"Failed to process reference face: {e}")
+                else:
+                    raise FileNotFoundError(f"Reference face image not found: {params.face_ref_img_path}")
+
+        # Landmarker
+        landmarker_path = Path(_config.models_dir) / Path(_config.face_landmarker_url).name
+        download_model(
+            _config.face_landmarker_url,
+            landmarker_path,
+            "MediaPipe Face Landmarker",
+            _logger,
+            ErrorHandler(_logger, _config.retry_max_attempts, _config.retry_backoff_seconds),
+            _config.user_agent,
+            expected_sha256=_config.face_landmarker_sha256,
+        )
+        if landmarker_path.exists():
+            face_landmarker = get_face_landmarker(str(landmarker_path), _logger, self)
+
+        # Person Detector
+        person_detector = None
+        if params.subject_detector_model and params.subject_detector_model != "None":
+            model_name = params.subject_detector_model
+            url_map = {
+                "YOLO12l-Seg": _config.yolo12l_seg_url,
+                "YOLO26n": _config.yolo26n_url,
+                "YOLO26s": _config.yolo26s_url,
+                "YOLO26m": _config.yolo26m_url,
+                "YOLO26l": _config.yolo26l_url,
+                "YOLO26x": _config.yolo26x_url,
+            }
+            model_url = url_map.get(model_name)
+            if model_url:
+                model_path = Path(_config.models_dir) / Path(model_url).name
+                download_model(
+                    model_url,
+                    model_path,
+                    f"Person Detector ({model_name})",
+                    _logger,
+                    ErrorHandler(_logger, _config.retry_max_attempts, _config.retry_backoff_seconds),
+                    _config.user_agent,
+                )
+                if model_path.exists():
+                    person_detector = self.get_subject_detector(model_name, str(model_path), _logger, device)
+
+        return {
+            "face_analyzer": face_analyzer,
+            "ref_emb": ref_emb,
+            "face_landmarker": face_landmarker,
+            "subject_detector": person_detector,
+            "device": device,
+        }
+
+    def get_lpips_metric(self, model_name: str = "alex", device: str = "cpu") -> Any:
+        """Retrieves or loads the LPIPS metric model cached in the registry."""
+        key = f"lpips_{model_name}_{device}"
+
+        def _loader():
+            import lpips
+
+            return lpips.LPIPS(net=model_name).to(device)
+
+        return self.get_or_load(key, _loader)

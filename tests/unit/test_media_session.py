@@ -3,21 +3,19 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.managers.media_session import (
-    MediaSession,
-    load_analysis_scenes,
-    validate_dir,
-)
+from core.managers.media_session import MediaSession
 
 
 def test_validate_session_dir(tmp_path):
     d = tmp_path / "valid"
     d.mkdir()
-    path, error = validate_dir(str(d))
+    session = MediaSession(session_path=str(d))
+    path, error = session.validate_dir()
     assert path is not None
     assert error is None
 
-    path, error = validate_dir(str(tmp_path / "invalid"))
+    session_err = MediaSession(session_path=str(tmp_path / "invalid"))
+    path, error = session_err.validate_dir()
     assert path is None
     assert error is not None
 
@@ -31,7 +29,8 @@ def test_execute_session_load(mock_logger, tmp_path):
     event = MagicMock()
     event.session_path = str(session_dir)
 
-    res = MediaSession.execute_session_load(event, mock_logger)
+    session = MediaSession(session_path=str(session_dir))
+    res = session.execute_session_load(event, mock_logger)
     assert res["success"] is True
     assert res["session_path"] == str(session_dir)
     assert len(res["scenes"]) == 1
@@ -42,13 +41,15 @@ def test_execute_session_load_errors(mock_logger, tmp_path):
 
     # 1. Empty path
     event.session_path = ""
-    res = MediaSession.execute_session_load(event, mock_logger)
+    session = MediaSession(session_path="")
+    res = session.execute_session_load(event, mock_logger)
     assert "error" in res
     assert "Please enter a path" in res["error"]
 
     # 2. Invalid path
     event.session_path = str(tmp_path / "ghost")
-    res = MediaSession.execute_session_load(event, mock_logger)
+    session = MediaSession(session_path=event.session_path)
+    res = session.execute_session_load(event, mock_logger)
     assert "error" in res
     assert "Session directory does not exist" in res["error"]
 
@@ -56,20 +57,21 @@ def test_execute_session_load_errors(mock_logger, tmp_path):
     session_dir = tmp_path / "session_err"
     session_dir.mkdir()
     event.session_path = str(session_dir)
-    res = MediaSession.execute_session_load(event, mock_logger)
+    session = MediaSession(session_path=event.session_path)
+    res = session.execute_session_load(event, mock_logger)
     assert "error" in res
     assert "run_config.json" in res["error"]
 
     # 4. Invalid run_config.json
     (session_dir / "run_config.json").write_text("invalid json")
-    res = MediaSession.execute_session_load(event, mock_logger)
+    res = session.execute_session_load(event, mock_logger)
     assert "error" in res
     assert "run_config.json is invalid" in res["error"]
 
     # 5. Invalid scenes.json (error handled gracefully by skipping scenes)
     (session_dir / "run_config.json").write_text(json.dumps({"source_path": "x"}))
     (session_dir / "scenes.json").write_text("invalid")
-    res = MediaSession.execute_session_load(event, mock_logger)
+    res = session.execute_session_load(event, mock_logger)
     assert "error" in res
     assert "Failed to read scenes.json" in res["error"]
 
@@ -84,7 +86,8 @@ def test_execute_session_load_with_seeds(mock_logger, tmp_path):
     event = MagicMock()
     event.session_path = str(session_dir)
 
-    res = MediaSession.execute_session_load(event, mock_logger)
+    session = MediaSession(session_path=str(session_dir))
+    res = session.execute_session_load(event, mock_logger)
     assert res["success"] is True
     assert res["scenes"][0]["best_frame"] == 5
 
@@ -100,7 +103,8 @@ def test_execute_session_load_corrupt_seeds(mock_logger, tmp_path):
     event = MagicMock()
     event.session_path = str(session_dir)
 
-    res = MediaSession.execute_session_load(event, mock_logger)
+    session = MediaSession(session_path=str(session_dir))
+    res = session.execute_session_load(event, mock_logger)
     # Should still succeed but log warning about seeds
     assert res["success"] is True
     assert len(res["scenes"]) == 1
@@ -118,28 +122,31 @@ def test_execute_session_load_missing_seeds_file(mock_logger, tmp_path):
     event = MagicMock()
     event.session_path = str(session_dir)
 
-    res = MediaSession.execute_session_load(event, mock_logger)
+    session = MediaSession(session_path=str(session_dir))
+    res = session.execute_session_load(event, mock_logger)
     assert res["success"] is True
     assert len(res["scenes"]) == 1
 
 
 def test_load_analysis_scenes_folder_mode():
     data = [{"shot_id": 0, "start_frame": 0, "end_frame": 10, "status": "excluded"}]
+    session = MediaSession()
     # In folder mode, even excluded scenes are loaded regardless of include_only
-    scenes = load_analysis_scenes(data, is_folder_mode=True, include_only=False)
+    scenes = session.load_analysis_scenes(data, is_folder_mode=True, include_only=False)
     assert len(scenes) == 1
 
-    scenes = load_analysis_scenes(data, is_folder_mode=True, include_only=True)
+    scenes = session.load_analysis_scenes(data, is_folder_mode=True, include_only=True)
     assert len(scenes) == 1
 
     # In video mode (is_folder_mode=False), include_only filters excluded
-    scenes = load_analysis_scenes(data, is_folder_mode=False, include_only=True)
+    scenes = session.load_analysis_scenes(data, is_folder_mode=False, include_only=True)
     assert len(scenes) == 0
 
 
 def test_validate_session_dir_exception():
     # Trigger exception in validate_dir (e.g. by passing something that isn't a string or Path and doesn't have expanduser)
-    path, error = validate_dir(None)
+    session = MediaSession(session_path=None)
+    path, error = session.validate_dir()
     assert path is None
     assert "Invalid session path" in error
 
@@ -214,7 +221,8 @@ def test_get_video_info(mock_cap):
 
     instance.get.side_effect = get_side_effect
 
-    info = MediaSession.get_video_info("test.mp4")
+    session = MediaSession(source_path="test.mp4")
+    info = session.get_video_info()
 
     assert info["fps"] == 30.0
     assert info["width"] == 1920

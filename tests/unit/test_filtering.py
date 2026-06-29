@@ -85,9 +85,8 @@ class TestFiltering:
 
     # --- LPIPS Batching ---
 
-    @patch("core.operators.dedup.get_lpips_metric")
     @patch("torch.stack")
-    def test_run_batched_lpips(self, mock_stack, mock_get_lpips, sample_frames, mock_thumbnail_manager):
+    def test_run_batched_lpips(self, mock_stack, sample_frames, mock_thumbnail_manager):
         # Setup
         dedup_mask = np.array([True, True, True])
         reasons = defaultdict(list)
@@ -95,14 +94,24 @@ class TestFiltering:
 
         # Mock LPIPS model
         mock_model = MagicMock()
-        mock_get_lpips.return_value = mock_model
+        model_registry = MagicMock()
+        model_registry.get_lpips_metric.return_value = mock_model
         # Return distance 0.05 (duplicate)
         mock_model.forward.return_value.squeeze.return_value.cpu.return_value.numpy.return_value = np.array([0.05])
 
         # Mock images
         mock_thumbnail_manager.get.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
 
-        _run_batched_lpips(pairs, sample_frames, dedup_mask, reasons, mock_thumbnail_manager, "/tmp/out", 0.1)
+        _run_batched_lpips(
+            pairs,
+            sample_frames,
+            dedup_mask,
+            reasons,
+            mock_thumbnail_manager,
+            "/tmp/out",
+            0.1,
+            model_registry=model_registry,
+        )
 
         assert mock_thumbnail_manager.get.called
         assert dedup_mask[0] == False

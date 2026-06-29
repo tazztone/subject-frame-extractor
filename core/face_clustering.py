@@ -116,13 +116,12 @@ def scan_faces_in_session(context: "AnalysisContext", params: "PreAnalysisEvent"
         - thumb_path: Path to the thumbnail image
     """
     from core.io_utils import create_frame_map
-    from core.managers import initialize_analysis_models
 
     output_dir = Path(params.output_folder)
     context.logger.info(f"Output dir for face scanning: {output_dir}")
 
     # Initialize model
-    models = initialize_analysis_models(params.model_dump(), context.config, context.logger, context.model_registry)
+    models = context.model_registry.get_analysis_models(params)
     face_analyzer = models.get("face_analyzer")
     if not face_analyzer:
         context.logger.warning("Face analyzer not available")

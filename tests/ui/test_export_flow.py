@@ -43,7 +43,7 @@ class TestExportFlow:
         driver.expect_no_error_toast()
 
         # Verify a 'Kept' update surfaces (markdown/text in current mock UI)
-        expect(page.locator(Selectors.SCENE_GALLERY_VIEW_TOGGLE).get_by_text("Kept")).to_be_visible(timeout=5000)
+        expect(page.locator(Selectors.EXPORT_GALLERY_VIEW_TOGGLE).get_by_text("Kept")).to_be_visible(timeout=5000)
 
     def test_export_completion(self, shared_analysis_session: Page):
         """Verify that clicking Export completes and shows the success message."""

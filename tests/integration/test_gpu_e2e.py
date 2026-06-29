@@ -770,7 +770,7 @@ class TestOperatorE2E:
         """Standard operators can be executed on a real image."""
         from core.config import Config
         from core.logger import AppLogger
-        from core.operators import discover_operators, run_operators
+        from core.operators import OperatorContext, OperatorRegistry, discover_operators
 
         config = Config(logs_dir=str(tmp_path / "logs"))
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
@@ -779,11 +779,10 @@ class TestOperatorE2E:
         discover_operators()
 
         # Run subset of operators for speed
-        results = run_operators(
-            image_rgb=test_image,
-            config=config,
+        ctx = OperatorContext(image_rgb=test_image, config=config, logger=logger)
+        results = OperatorRegistry.execute(
+            ctx=ctx,
             operators=["sharpness", "edge_strength", "contrast", "brightness"],
-            logger=logger,
         )
 
         assert "sharpness" in results
@@ -806,7 +805,7 @@ class TestOperatorE2E:
 
         from core.config import Config
         from core.logger import AppLogger
-        from core.operators import OperatorRegistry, discover_operators, run_operators
+        from core.operators import OperatorContext, OperatorRegistry, discover_operators
 
         config = Config(logs_dir=str(tmp_path / "logs"))
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
@@ -820,7 +819,8 @@ class TestOperatorE2E:
         niqe_op.initialize(config)
 
         try:
-            results = run_operators(image_rgb=test_image, config=config, operators=["niqe"], logger=logger)
+            ctx = OperatorContext(image_rgb=test_image, config=config, logger=logger)
+            results = OperatorRegistry.execute(ctx=ctx, operators=["niqe"])
 
             assert "niqe" in results
             assert results["niqe"].success is True

@@ -61,7 +61,6 @@ class TestPipelinesOrchestrator:
             cuda_available=True,
         )
 
-    @patch("core.pipelines.initialize_analysis_models")
     @patch("core.pipelines.execute_pre_analysis")
     @patch("core.pipelines.execute_propagation")
     @patch("core.pipelines.execute_analysis")
@@ -70,12 +69,11 @@ class TestPipelinesOrchestrator:
         mock_execute_analysis,
         mock_execute_propagation,
         mock_execute_pre_analysis,
-        mock_init_models,
         mock_pre_analysis_event,
         context,
     ):
         """Test full chain for video: Pre -> Prop -> Ana."""
-        mock_init_models.return_value = {"models": "loaded"}
+        context.model_registry.get_analysis_models.return_value = {"models": "loaded"}
 
         # Pre-analysis yields something then sets done=True
         mock_execute_pre_analysis.side_effect = _make_gen(
@@ -108,7 +106,6 @@ class TestPipelinesOrchestrator:
         mock_execute_propagation.assert_called_once()
         mock_execute_analysis.assert_called_once()
 
-    @patch("core.pipelines.initialize_analysis_models")
     @patch("core.pipelines.execute_pre_analysis")
     @patch("core.pipelines.execute_propagation")
     @patch("core.pipelines.execute_analysis")
@@ -117,13 +114,12 @@ class TestPipelinesOrchestrator:
         mock_execute_analysis,
         mock_execute_propagation,
         mock_execute_pre_analysis,
-        mock_init_models,
         mock_pre_analysis_event,
         context,
     ):
         """Test folder mode skips propagation."""
         mock_pre_analysis_event.video_path = ""  # Folder mode
-        mock_init_models.return_value = {}
+        context.model_registry.get_analysis_models.return_value = {}
 
         mock_execute_pre_analysis.side_effect = _make_gen(
             PreAnalysisResult(unified_log="Pre done", scenes=[], output_dir="/tmp/out", video_path="")
@@ -141,19 +137,17 @@ class TestPipelinesOrchestrator:
         mock_execute_propagation.assert_not_called()
         mock_execute_analysis.assert_called_once()
 
-    @patch("core.pipelines.initialize_analysis_models")
     @patch("core.pipelines.execute_pre_analysis")
     @patch("core.pipelines.execute_propagation")
     def test_execute_analysis_orchestrator_pre_analysis_failure(
         self,
         mock_execute_propagation,
         mock_execute_pre_analysis,
-        mock_init_models,
         mock_pre_analysis_event,
         context,
     ):
         """Chain stops if Pre-Analysis does not complete."""
-        mock_init_models.return_value = {}
+        context.model_registry.get_analysis_models.return_value = {}
 
         # Yields failure early
         mock_execute_pre_analysis.side_effect = _make_gen(

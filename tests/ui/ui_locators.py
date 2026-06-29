@@ -58,6 +58,7 @@ class Selectors:
     DEDUP_THRESH = "#dedup_thresh_input"
     EXPORT_BUTTON = "#export_button"
     DRY_RUN_BUTTON = "#dry_run_button"
+    EXPORT_GALLERY_VIEW_TOGGLE = "#gallery_view_toggle"
 
 
 class Labels:

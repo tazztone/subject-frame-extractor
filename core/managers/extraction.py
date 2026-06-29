@@ -278,7 +278,7 @@ class ExtractionPipeline:
             video_path = Path(media_session.prepare_video(self.logger))
             output_dir = Path(self.params.output_folder or Path(self.config.downloads_dir) / video_path.stem)
             output_dir.mkdir(exist_ok=True, parents=True)
-            video_info = MediaSession.get_video_info(str(video_path))
+            video_info = media_session.get_video_info(str(video_path))
             if tracker:
                 totals = estimate_totals(self.params, video_info, None)
                 tracker.start(totals["extraction"], desc="Extracting frames")

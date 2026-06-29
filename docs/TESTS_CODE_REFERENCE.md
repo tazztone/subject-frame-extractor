@@ -128,7 +128,6 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_propagator_logic.py`](#-testsunittest_mask_propagator_logicpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_mask_propagator_oom.py`](#-testsunittest_mask_propagator_oompy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_media_session.py`](#-testsunittest_media_sessionpy)  
-&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_model_loader.py`](#-testsunittest_model_loaderpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_model_registry.py`](#-testsunittest_model_registrypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_models.py`](#-testsunittest_modelspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_models_property.py`](#-testsunittest_models_propertypy)  
@@ -799,7 +798,7 @@ class TestSystemLogsRegression:
         """Clear Logs button should clear the log display."""
 class TestPropagationErrorHandling:
     """Tests for propagation error handling (Bug 1)."""
-    def test_propagate_button_found(self, analyzed_session):
+    def test_propagate_button_found(self, app_driver: AppDriver):
         """Propagate button should be present on the Scenes tab."""
 ```
 
@@ -973,7 +972,7 @@ class TestSessionRecovery:
         """Test rapid tab switching doesn't cause errors."""
 class TestWorkflowState:
     """Tests for workflow state management."""
-    def test_extraction_enables_subject_tab(self, extracted_session: Page):
+    def test_extraction_enables_subject_tab(self, app_driver: AppDriver):
         """Verify Subject tab becomes usable after extraction."""
     def test_workflow_progress_tracking(self, app_driver: AppDriver):
         """Verify workflow progress is tracked."""
@@ -1145,6 +1144,7 @@ class Selectors:
     DEDUP_THRESH = "<REDACTED_STRING>"
     EXPORT_BUTTON = "<REDACTED_STRING>"
     DRY_RUN_BUTTON = "<REDACTED_STRING>"
+    EXPORT_GALLERY_VIEW_TOGGLE = "<REDACTED_STRING>"
 class Labels:
     """Text/label-based locators (used when elem_id isn't available)."""
     TAB_SOURCE = "<REDACTED_STRING>"
@@ -1210,18 +1210,15 @@ def test_face_prominence_off_center():
 ### `📄 tests/unit/test_analysis.py`
 
 ```python
-@patch('core.managers.analysis.initialize_analysis_models')
 @patch('core.managers.analysis.SubjectMasker')
 @patch('core.managers.analysis.save_scene_seeds')
-def test_pre_analysis_pipeline(mock_save, mock_masker, mock_init, mock_logger, mock_config, tmp_path): ...
-@patch('core.managers.analysis.initialize_analysis_models')
+def test_pre_analysis_pipeline(mock_save, mock_masker, mock_logger, mock_config, tmp_path): ...
 @patch('core.managers.analysis.SubjectMasker')
 @patch('core.managers.analysis.Database')
 @patch('core.managers.analysis.create_frame_map')
-def test_analysis_pipeline_full(mock_cfm, mock_db, mock_masker, mock_init, mock_logger, mock_config, tmp_path): ...
-@patch('core.managers.analysis.initialize_analysis_models')
+def test_analysis_pipeline_full(mock_cfm, mock_db, mock_masker, mock_logger, mock_config, tmp_path): ...
 @patch('core.managers.analysis.Database')
-def test_analysis_pipeline_only(mock_db, mock_init, mock_logger, mock_config, tmp_path): ...
+def test_analysis_pipeline_only(mock_db, mock_logger, mock_config, tmp_path): ...
 ```
 
 ### `📄 tests/unit/test_analysis_manager.py`
@@ -1236,24 +1233,19 @@ def test_analysis_pipeline_initialization(mock_db, mock_deps, analysis_params): 
 def test_load_scenes_failure(tmp_path): ...
 def test_load_scenes_success(tmp_path): ...
 @patch('core.managers.analysis.SubjectMasker')
-@patch('core.managers.analysis.initialize_analysis_models')
 @patch('core.managers.analysis.Database')
-def test_run_full_analysis_success(mock_db, mock_init_models, mock_masker_cls, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.run_operators')
-@patch('core.managers.analysis.initialize_analysis_models')
+def test_run_full_analysis_success(mock_db, mock_masker_cls, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.OperatorRegistry.execute')
 @patch('core.managers.analysis.Database')
-def test_run_analysis_only_success(mock_db, mock_init_models, mock_run_ops, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.initialize_analysis_models')
+def test_run_analysis_only_success(mock_db, mock_run_ops, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.SubjectMasker')
-def test_pre_analysis_run_cancellation(mock_masker_cls, mock_init_models, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.initialize_analysis_models')
+def test_pre_analysis_run_cancellation(mock_masker_cls, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.Database')
-def test_analysis_run_resume_logic(mock_db, mock_init_models, mock_deps, analysis_params, tmp_path): ...
+def test_analysis_run_resume_logic(mock_db, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.cv2.imread')
-@patch('core.managers.analysis.initialize_analysis_models')
 @patch('core.managers.analysis.Database')
-def test_process_reference_face_logic(mock_db, mock_init_models, mock_imread, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.run_operators')
+def test_process_reference_face_logic(mock_db, mock_imread, mock_deps, analysis_params, tmp_path): ...
+@patch('core.managers.analysis.OperatorRegistry.execute')
 @patch('core.managers.analysis.Database')
 def test_process_single_frame_complex_meta(mock_db, mock_run_ops, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.Database')
@@ -1268,10 +1260,9 @@ def test_image_folder_analysis_trigger(mock_create_map, mock_db, mock_deps, anal
 def test_filter_completed_scenes(mock_db, mock_deps, analysis_params): ...
 @patch('core.managers.analysis.Database')
 def test_save_progress_bulk(mock_db, mock_deps, analysis_params, tmp_path): ...
-@patch('core.managers.analysis.initialize_analysis_models')
 @patch('core.managers.analysis.SubjectMasker')
 @patch('core.managers.analysis.save_scene_seeds')
-def test_pre_analysis_pipeline_run(mock_save_seeds, mock_masker_cls, mock_init_models, mock_deps, analysis_params, tmp_path): ...
+def test_pre_analysis_pipeline_run(mock_save_seeds, mock_masker_cls, mock_deps, analysis_params, tmp_path): ...
 @patch('core.managers.analysis.Database')
 def test_niqe_initialization_failures(mock_db, mock_deps, analysis_params): ...
 def test_pre_analysis_process_single_scene_edge_cases(mock_deps, analysis_params, tmp_path): ...
@@ -1987,9 +1978,8 @@ class TestFiltering:
     @patch('core.operators.viz.plt')
     def test_histogram_svg(self, mock_plt, mock_logger): ...
     def test_extract_metric_arrays(self, sample_frames, mock_config): ...
-    @patch('core.operators.dedup.get_lpips_metric')
     @patch('torch.stack')
-    def test_run_batched_lpips(self, mock_stack, mock_get_lpips, sample_frames, mock_thumbnail_manager): ...
+    def test_run_batched_lpips(self, mock_stack, sample_frames, mock_thumbnail_manager): ...
     def test_apply_deduplication_filter_phash(self, sample_frames, mock_config): ...
     @patch('core.operators.dedup._run_batched_lpips')
     def test_apply_deduplication_filter_lpips(self, mock_run_lpips, sample_frames, mock_config, mock_thumbnail_manager): ...
@@ -2310,13 +2300,11 @@ class TestManagers:
     @patch('core.managers.face.python.BaseOptions')
     @patch('core.managers.face.vision.FaceLandmarkerOptions')
     def test_get_face_landmarker(self, mock_opts, mock_base, mock_cls, mock_logger): ...
-    @patch('core.managers.model_loader.get_face_analyzer')
-    @patch('core.managers.model_loader.download_model')
+    @patch('core.io_utils.download_model')
     @patch('pathlib.Path.exists', return_value=True)
     @patch('pathlib.Path.is_file', return_value=True)
-    @patch('core.managers.model_loader.get_face_landmarker')
     @patch('cv2.imread', return_value=np.zeros((100, 100, 3)))
-    def test_initialize_analysis_models(self, mock_imread, mock_get_landmarker, mock_isfile, mock_exists, mock_download, mock_get_analyzer, mock_config, mock_logger): ...
+    def test_initialize_analysis_models(self, mock_imread, mock_isfile, mock_exists, mock_download, mock_config, mock_logger): ...
     @patch('insightface.app.FaceAnalysis')
     @patch('time.sleep', return_value=None)
     def test_get_face_analyzer_retry_logic(self, mock_sleep, mock_face_analysis_cls, mock_logger): ...
@@ -2328,7 +2316,7 @@ class TestManagers:
     @patch('core.managers.thumbnails.Image.open')
     @patch('pathlib.Path.exists', return_value=True)
     def test_thumbnail_manager_corrupt_file(self, mock_exists, mock_open, mock_logger, mock_config): ...
-    @patch('core.managers.model_loader.lpips.LPIPS')
+    @patch('lpips.LPIPS')
     def test_get_lpips_metric(self, mock_lpips): ...
     def test_model_registry_basic_load(self, mock_logger):
         """Test basic ModelRegistry load (retry logic is in get_tracker/etc, not get_or_..."""
@@ -2435,11 +2423,11 @@ def test_media_session_youtube_error(mock_ytdlp_module, mock_download_error_cls,
 def test_get_video_info(mock_cap): ...
 ```
 
-### `📄 tests/unit/test_model_loader.py`
+### `📄 tests/unit/test_model_registry.py`
 
 ```python
-class TestModelLoader:
-    """Tests for core/managers/model_loader.py and core/io_utils.py (download_model)"""
+class TestModelRegistry:
+    """Tests for ModelRegistry loading logic and core/io_utils.py (download_model)"""
     @pytest.fixture
     def mock_deps(self): ...
     def test_get_lpips_metric(self): ...
@@ -2449,28 +2437,6 @@ class TestModelLoader:
     def test_download_model_directory_creation(self, mock_deps, tmp_path): ...
     def test_initialize_analysis_models_basic(self, tmp_path): ...
     def test_compute_sha256(self, tmp_path): ...
-```
-
-### `📄 tests/unit/test_model_registry.py`
-
-```python
-class TestModelRegistry:
-    """Tests for core/managers/registry.py"""
-    @pytest.fixture
-    def registry(self, mock_logger): ...
-    def test_get_or_load_happy_path(self, registry): ...
-    def test_get_or_load_oom_retry(self, registry):
-        """Test that OOM triggers clear() and retry."""
-    def test_sticky_failure_logic(self, registry):
-        """Test that failures are cached (sticky failure)."""
-    def test_clear_and_reload(self, registry):
-        """Test that clear() removes models and allows reload."""
-    def test_concurrent_loading(self, registry):
-        """Test that concurrent loads only call the factory once."""
-    def test_get_tracker_oom_fallback(self, registry):
-        """Test tracker init fallback to CPU on OOM."""
-    def test_get_tracker_invalid_and_retired(self, registry):
-        """Test that retired or unknown tracker backends return None."""
 ```
 
 ### `📄 tests/unit/test_models.py`
@@ -2717,20 +2683,17 @@ class TestPipelinesExtended:
     def mock_params(self, tmp_path): ...
     @pytest.fixture
     def pipeline(self, mock_params, mock_logger, mock_config, mock_db, mock_thumbnail_manager): ...
-    @patch('core.managers.analysis.initialize_analysis_models')
     @patch('core.managers.analysis.SubjectMasker')
-    def test_run_full_analysis_propagation(self, mock_masker_cls, mock_init_models, pipeline, mock_params): ...
-    @patch('core.managers.analysis.initialize_analysis_models')
-    def test_run_analysis_only(self, mock_init_models, pipeline, mock_params): ...
+    def test_run_full_analysis_propagation(self, mock_masker_cls, pipeline, mock_params): ...
+    def test_run_analysis_only(self, pipeline, mock_params): ...
     def test_cancellation_in_propagation(self, pipeline, mock_params): ...
 class TestPreAnalysisPipeline:
     @pytest.fixture
     def pre_pipeline(self, mock_params, mock_logger, mock_config, mock_thumbnail_manager): ...
-    @patch('core.managers.analysis.initialize_analysis_models')
     @patch('core.managers.analysis.SubjectMasker')
     @patch('core.managers.analysis.save_scene_seeds')
     @patch('PIL.Image.fromarray')
-    def test_pre_analysis_run(self, mock_img_save, mock_save_seeds, mock_masker_cls, mock_init_models, pre_pipeline, tmp_path): ...
+    def test_pre_analysis_run(self, mock_img_save, mock_save_seeds, mock_masker_cls, pre_pipeline, tmp_path): ...
 class TestExecutePreAnalysis:
     @patch('core.pipelines.PreAnalysisPipeline')
     @patch('core.pipelines._load_scenes')
@@ -2751,22 +2714,19 @@ class TestPipelinesOrchestrator:
     def mock_pre_analysis_event(self): ...
     @pytest.fixture
     def context(self): ...
-    @patch('core.pipelines.initialize_analysis_models')
     @patch('core.pipelines.execute_pre_analysis')
     @patch('core.pipelines.execute_propagation')
     @patch('core.pipelines.execute_analysis')
-    def test_execute_analysis_orchestrator_video_full_chain(self, mock_execute_analysis, mock_execute_propagation, mock_execute_pre_analysis, mock_init_models, mock_pre_analysis_event, context):
+    def test_execute_analysis_orchestrator_video_full_chain(self, mock_execute_analysis, mock_execute_propagation, mock_execute_pre_analysis, mock_pre_analysis_event, context):
         """Test full chain for video: Pre -> Prop -> Ana."""
-    @patch('core.pipelines.initialize_analysis_models')
     @patch('core.pipelines.execute_pre_analysis')
     @patch('core.pipelines.execute_propagation')
     @patch('core.pipelines.execute_analysis')
-    def test_execute_analysis_orchestrator_folder_mode(self, mock_execute_analysis, mock_execute_propagation, mock_execute_pre_analysis, mock_init_models, mock_pre_analysis_event, context):
+    def test_execute_analysis_orchestrator_folder_mode(self, mock_execute_analysis, mock_execute_propagation, mock_execute_pre_analysis, mock_pre_analysis_event, context):
         """Test folder mode skips propagation."""
-    @patch('core.pipelines.initialize_analysis_models')
     @patch('core.pipelines.execute_pre_analysis')
     @patch('core.pipelines.execute_propagation')
-    def test_execute_analysis_orchestrator_pre_analysis_failure(self, mock_execute_propagation, mock_execute_pre_analysis, mock_init_models, mock_pre_analysis_event, context):
+    def test_execute_analysis_orchestrator_pre_analysis_failure(self, mock_execute_propagation, mock_execute_pre_analysis, mock_pre_analysis_event, context):
         """Chain stops if Pre-Analysis does not complete."""
     @patch('core.pipelines.execute_extraction')
     @patch('core.pipelines.execute_analysis_orchestrator')
@@ -2787,11 +2747,11 @@ def test_execute_extraction(mock_pipeline_cls, mock_config, mock_logger): ...
 @patch('core.pipelines._load_scenes', return_value=[])
 def test_execute_pre_analysis(mock_load, mock_pipeline_cls, mock_config, mock_logger, tmp_path): ...
 @patch('core.pipelines.AnalysisPipeline')
-@patch('core.pipelines._load_analysis_scenes')
+@patch('core.pipelines.MediaSession.load_analysis_scenes')
 @patch('core.pipelines.MediaSession.get_video_info', return_value={'fps': 30, 'frame_count': 100})
 def test_execute_propagation(mock_vinfo, mock_load, mock_pipeline_cls, mock_config, mock_logger, tmp_path): ...
 @patch('core.pipelines.AnalysisPipeline')
-@patch('core.pipelines._load_analysis_scenes')
+@patch('core.pipelines.MediaSession.load_analysis_scenes')
 def test_execute_analysis(mock_load, mock_pipeline_cls, mock_config, mock_logger, tmp_path): ...
 ```
 
@@ -3057,9 +3017,8 @@ class TestSceneUtilsHelpers:
     def test_set_batch_scene_status(self, mock_scene, mock_logger, tmp_path): ...
     def test_set_batch_scene_status_not_found(self, mock_scene, mock_logger, tmp_path): ...
     def test_set_batch_scene_status_empty_ids(self, mock_scene, mock_logger, tmp_path): ...
-    @patch('core.scene_utils.helpers.initialize_analysis_models')
     @patch('core.scene_utils.helpers.create_frame_map')
-    def test_create_analysis_context(self, mock_create_frame_map, mock_init_models, mock_config, mock_logger): ...
+    def test_create_analysis_context(self, mock_create_frame_map, mock_config, mock_logger): ...
     @patch('core.scene_utils.helpers.render_mask_overlay')
     @patch('PIL.Image.fromarray')
     def test_recompute_single_preview(self, mock_pil_fromarray, mock_render, mock_scene, mock_logger, mock_config): ...

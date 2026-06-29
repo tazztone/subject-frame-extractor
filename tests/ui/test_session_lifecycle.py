@@ -1,5 +1,5 @@
 import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import expect
 
 from .app_driver import AppDriver
 from .ui_locators import Labels, Selectors
@@ -52,13 +52,20 @@ class TestSessionRecovery:
 class TestWorkflowState:
     """Tests for workflow state management."""
 
-    def test_extraction_enables_subject_tab(self, extracted_session: Page):
+    def test_extraction_enables_subject_tab(self, app_driver: AppDriver):
         """Verify Subject tab becomes usable after extraction."""
-        driver = AppDriver(extracted_session)
-        driver.navigate(Labels.TAB_SUBJECT)
-
-        # Confirm Subject button should be visible
-        driver.expect_visible(Selectors.START_PRE_ANALYSIS, timeout=5000)
+        # 1. Fill video
+        app_driver.page.locator(Selectors.SOURCE_INPUT).fill("dummy_video.mp4")
+        # 2. Click start extraction
+        app_driver.page.locator(Selectors.START_EXTRACTION).click()
+        # 3. Wait for success status
+        expect(app_driver.page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000
+        )
+        # 4. Navigate to Subject tab
+        app_driver.navigate(Labels.TAB_SUBJECT)
+        # 5. Expect find frames button visible
+        app_driver.expect_visible(Selectors.START_PRE_ANALYSIS, timeout=5000)
 
     def test_workflow_progress_tracking(self, app_driver: AppDriver):
         """Verify workflow progress is tracked."""

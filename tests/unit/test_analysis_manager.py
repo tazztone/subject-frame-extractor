@@ -76,9 +76,8 @@ def test_load_scenes_success(tmp_path):
 
 
 @patch("core.managers.analysis.SubjectMasker")
-@patch("core.managers.analysis.initialize_analysis_models")
 @patch("core.managers.analysis.Database")
-def test_run_full_analysis_success(mock_db, mock_init_models, mock_masker_cls, mock_deps, analysis_params, tmp_path):
+def test_run_full_analysis_success(mock_db, mock_masker_cls, mock_deps, analysis_params, tmp_path):
     analysis_params.output_folder = str(tmp_path)
     analysis_params.video_path = "test.mp4"
 
@@ -94,7 +93,7 @@ def test_run_full_analysis_success(mock_db, mock_init_models, mock_masker_cls, m
     pipeline.db = MagicMock()
 
     scenes = [Scene(shot_id=1, start_frame=0, end_frame=10)]
-    mock_init_models.return_value = {
+    mock_deps["model_registry"].get_analysis_models.return_value = {
         "face_analyzer": None,
         "ref_emb": None,
         "face_landmarker": None,
@@ -108,10 +107,9 @@ def test_run_full_analysis_success(mock_db, mock_init_models, mock_masker_cls, m
     assert mock_masker_cls.return_value.run_propagation.called
 
 
-@patch("core.managers.analysis.run_operators")
-@patch("core.managers.analysis.initialize_analysis_models")
+@patch("core.managers.analysis.OperatorRegistry.execute")
 @patch("core.managers.analysis.Database")
-def test_run_analysis_only_success(mock_db, mock_init_models, mock_run_ops, mock_deps, analysis_params, tmp_path):
+def test_run_analysis_only_success(mock_db, mock_run_ops, mock_deps, analysis_params, tmp_path):
     analysis_params.output_folder = str(tmp_path)
     analysis_params.video_path = "test.mp4"
     analysis_params.compute_quality_score = True
@@ -130,7 +128,7 @@ def test_run_analysis_only_success(mock_db, mock_init_models, mock_run_ops, mock
     pipeline.thumb_dir.mkdir()
     (pipeline.thumb_dir / "frame_000001.webp").write_text("dummy")
 
-    mock_init_models.return_value = {
+    mock_deps["model_registry"].get_analysis_models.return_value = {
         "face_analyzer": None,
         "ref_emb": None,
         "face_landmarker": None,
@@ -153,9 +151,8 @@ def test_run_analysis_only_success(mock_db, mock_init_models, mock_run_ops, mock
     assert mock_run_ops.called
 
 
-@patch("core.managers.analysis.initialize_analysis_models")
 @patch("core.managers.analysis.SubjectMasker")
-def test_pre_analysis_run_cancellation(mock_masker_cls, mock_init_models, mock_deps, analysis_params, tmp_path):
+def test_pre_analysis_run_cancellation(mock_masker_cls, mock_deps, analysis_params, tmp_path):
     analysis_params.output_folder = str(tmp_path)
     pipeline = PreAnalysisPipeline(
         mock_deps["config"],
@@ -167,7 +164,7 @@ def test_pre_analysis_run_cancellation(mock_masker_cls, mock_init_models, mock_d
         mock_deps["model_registry"],
     )
 
-    mock_init_models.return_value = {
+    mock_deps["model_registry"].get_analysis_models.return_value = {
         "face_analyzer": None,
         "ref_emb": None,
         "face_landmarker": None,
@@ -188,9 +185,8 @@ def test_pre_analysis_run_cancellation(mock_masker_cls, mock_init_models, mock_d
     assert not mock_masker.get_seed_for_frame.called
 
 
-@patch("core.managers.analysis.initialize_analysis_models")
 @patch("core.managers.analysis.Database")
-def test_analysis_run_resume_logic(mock_db, mock_init_models, mock_deps, analysis_params, tmp_path):
+def test_analysis_run_resume_logic(mock_db, mock_deps, analysis_params, tmp_path):
     analysis_params.output_folder = str(tmp_path)
     analysis_params.resume = True
 
@@ -209,7 +205,7 @@ def test_analysis_run_resume_logic(mock_db, mock_init_models, mock_deps, analysi
         mock_deps["model_registry"],
     )
     pipeline.db = MagicMock()
-    mock_init_models.return_value = {
+    mock_deps["model_registry"].get_analysis_models.return_value = {
         "face_analyzer": None,
         "ref_emb": None,
         "face_landmarker": None,
@@ -229,9 +225,8 @@ def test_analysis_run_resume_logic(mock_db, mock_init_models, mock_deps, analysi
 
 
 @patch("core.managers.analysis.cv2.imread")
-@patch("core.managers.analysis.initialize_analysis_models")
 @patch("core.managers.analysis.Database")
-def test_process_reference_face_logic(mock_db, mock_init_models, mock_imread, mock_deps, analysis_params, tmp_path):
+def test_process_reference_face_logic(mock_db, mock_imread, mock_deps, analysis_params, tmp_path):
     analysis_params.output_folder = str(tmp_path)
     analysis_params.face_ref_img_path = str(tmp_path / "ref.jpg")
     (tmp_path / "ref.jpg").write_text("dummy")
@@ -258,7 +253,7 @@ def test_process_reference_face_logic(mock_db, mock_init_models, mock_imread, mo
     assert np.array_equal(pipeline.reference_embedding, mock_face.normed_embedding)
 
 
-@patch("core.managers.analysis.run_operators")
+@patch("core.managers.analysis.OperatorRegistry.execute")
 @patch("core.managers.analysis.Database")
 def test_process_single_frame_complex_meta(mock_db, mock_run_ops, mock_deps, analysis_params, tmp_path):
     pipeline = AnalysisPipeline(
@@ -425,12 +420,9 @@ def test_save_progress_bulk(mock_db, mock_deps, analysis_params, tmp_path):
         assert 1 in data["completed_scenes"]
 
 
-@patch("core.managers.analysis.initialize_analysis_models")
 @patch("core.managers.analysis.SubjectMasker")
 @patch("core.managers.analysis.save_scene_seeds")
-def test_pre_analysis_pipeline_run(
-    mock_save_seeds, mock_masker_cls, mock_init_models, mock_deps, analysis_params, tmp_path
-):
+def test_pre_analysis_pipeline_run(mock_save_seeds, mock_masker_cls, mock_deps, analysis_params, tmp_path):
     analysis_params.output_folder = str(tmp_path)
     from core.managers.analysis import PreAnalysisPipeline
 
@@ -444,7 +436,7 @@ def test_pre_analysis_pipeline_run(
         mock_deps["model_registry"],
     )
 
-    mock_init_models.return_value = {
+    mock_deps["model_registry"].get_analysis_models.return_value = {
         "face_analyzer": None,
         "ref_emb": None,
         "face_landmarker": None,
@@ -548,7 +540,7 @@ def test_process_single_frame_metadata_assembly(mock_db, mock_deps, analysis_par
     mock_deps["thumbnail_manager"].get.return_value = img
 
     with (
-        patch("core.managers.analysis.run_operators") as mock_run,
+        patch("core.managers.analysis.OperatorRegistry.execute") as mock_run,
         patch("core.managers.analysis.cv2.imread", return_value=np.zeros((10, 10))),
         patch("core.managers.analysis.cv2.resize", return_value=np.zeros((10, 10))),
     ):
@@ -776,7 +768,7 @@ def test_process_single_frame_full_meta(mock_db, mock_deps, analysis_params, tmp
     mock_face.bbox = np.array([0, 0, 10, 10])
     pipeline.face_analyzer.get.return_value = [mock_face]
 
-    with patch("core.managers.analysis.run_operators") as mock_run:
+    with patch("core.managers.analysis.OperatorRegistry.execute") as mock_run:
         mock_res = MagicMock()
         mock_res.success = True
         mock_res.metrics = {"face_sim": 0.9, "quality": 0.8, "non_existent": 0.5}

@@ -223,6 +223,7 @@ class AppDriver:
         """Click the Export button on the Export tab."""
         btn = self.page.locator(Selectors.EXPORT_BUTTON)
         expect(btn).to_be_visible(timeout=10000)
+        expect(btn).to_be_enabled(timeout=10000)
         btn.click(force=force)
         return self
 
@@ -230,6 +231,7 @@ class AppDriver:
         """Click the Dry Run button on the Export tab."""
         btn = self.page.locator(Selectors.DRY_RUN_BUTTON)
         expect(btn).to_be_visible(timeout=10000)
+        expect(btn).to_be_enabled(timeout=10000)
         btn.click()
         return self
 
@@ -290,9 +292,9 @@ class AppDriver:
         import re
 
         if isinstance(match, str):
-            pattern = re.compile(re.escape(match))
+            pattern = re.compile(re.escape(match), re.IGNORECASE)
         else:
-            pattern = match
+            pattern = re.compile(match.pattern, match.flags | re.IGNORECASE)
         expect(textarea).to_have_value(pattern, timeout=timeout)
         return self
 

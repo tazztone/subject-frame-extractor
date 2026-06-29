@@ -183,13 +183,16 @@ def apply_all_filters_vectorized(
     config: "Config",
     thumbnail_manager: Optional["ThumbnailManager"] = None,
     output_dir: Optional[str] = None,
+    model_registry: Optional[Any] = None,
 ) -> tuple[list, list, Counter, dict]:
     if not all_frames_data:
         return [], [], Counter(), {}
     metric_arrays = _extract_metric_arrays(all_frames_data, config)
 
     # Deduplication
-    dedup_mask, reasons = apply_deduplication_filter(all_frames_data, filters, thumbnail_manager, config, output_dir)
+    dedup_mask, reasons = apply_deduplication_filter(
+        all_frames_data, filters, thumbnail_manager, config, output_dir, model_registry=model_registry
+    )
 
     metric_mask, metric_reasons = _apply_metric_filters(all_frames_data, metric_arrays, filters, config)
     for fname, r_list in metric_reasons.items():

@@ -179,9 +179,8 @@ class TestSceneUtilsHelpers:
         )
         assert "No scenes selected." in msg
 
-    @patch("core.scene_utils.helpers.initialize_analysis_models")
     @patch("core.scene_utils.helpers.create_frame_map")
-    def test_create_analysis_context(self, mock_create_frame_map, mock_init_models, mock_config, mock_logger):
+    def test_create_analysis_context(self, mock_create_frame_map, mock_config, mock_logger):
         # Mock inputs
         thumbnail_manager = MagicMock()
         model_registry = MagicMock()
@@ -194,7 +193,7 @@ class TestSceneUtilsHelpers:
         ana_input_components = ["/tmp/out", "sam3"]
 
         # Setup mocks
-        mock_init_models.return_value = {
+        model_registry.get_analysis_models.return_value = {
             "face_analyzer": MagicMock(),
             "ref_emb": None,
             "face_landmarker": MagicMock(),

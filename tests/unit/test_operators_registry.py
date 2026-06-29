@@ -3,8 +3,8 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from core.operators.base import Operator, OperatorConfig, OperatorResult
-from core.operators.registry import OperatorRegistry, discover_operators, register_operator, run_operators
+from core.operators.base import Operator, OperatorConfig, OperatorContext, OperatorResult
+from core.operators.registry import OperatorRegistry, discover_operators, register_operator
 
 
 class MockOperator(Operator):
@@ -96,7 +96,8 @@ def test_run_operators_basic():
     OperatorRegistry.register(op2)
 
     img = np.zeros((10, 10, 3), dtype=np.uint8)
-    results = run_operators(img, operators=["op1"])
+    ctx = OperatorContext(image_rgb=img)
+    results = OperatorRegistry.execute(ctx, operators=["op1"])
 
     assert "op1" in results
     assert "op2" not in results
@@ -105,7 +106,8 @@ def test_run_operators_basic():
 
 def test_run_operators_not_found():
     img = np.zeros((10, 10, 3), dtype=np.uint8)
-    results = run_operators(img, operators=["missing"])
+    ctx = OperatorContext(image_rgb=img)
+    results = OperatorRegistry.execute(ctx, operators=["missing"])
     assert "missing" in results
     assert results["missing"].success is False
     assert "not found" in results["missing"].error
@@ -128,10 +130,11 @@ def test_run_operators_retry_logic():
 
     logger = MagicMock()
     img = np.zeros((10, 10, 3), dtype=np.uint8)
+    ctx = OperatorContext(image_rgb=img, logger=logger)
 
     # We mock time.sleep to speed up tests
     with patch("time.sleep"):
-        results = run_operators(img, operators=["failing"], logger=logger)
+        results = OperatorRegistry.execute(ctx, operators=["failing"])
 
     assert results["failing"].success is True
     assert results["failing"].metrics["val"] == 0.8
@@ -146,6 +149,7 @@ def test_run_operators_with_tensor(mock_cuda):
 
     img = np.zeros((10, 10, 3), dtype=np.uint8)
     mask = np.zeros((10, 10), dtype=np.uint8)
+    ctx = OperatorContext(image_rgb=img, mask=mask)
 
     with patch("torch.from_numpy") as mock_from_numpy:
         mock_tensor = MagicMock()
@@ -156,7 +160,7 @@ def test_run_operators_with_tensor(mock_cuda):
         mock_tensor.unsqueeze.return_value = mock_tensor
         mock_tensor.to.return_value = mock_tensor
 
-        run_operators(img, mask=mask, operators=["tensor_op"])
+        OperatorRegistry.execute(ctx, operators=["tensor_op"])
         assert mock_from_numpy.called
 
 
@@ -167,8 +171,9 @@ def test_run_operators_quality_score_last():
     OperatorRegistry.register(op_a)
 
     img = np.zeros((10, 10, 3), dtype=np.uint8)
+    ctx = OperatorContext(image_rgb=img)
     with patch.object(OperatorRegistry, "get", wraps=OperatorRegistry.get) as mock_get:
-        run_operators(img, operators=["quality_score", "a"])
+        OperatorRegistry.execute(ctx, operators=["quality_score", "a"])
         # Calls: get(quality_score) for tensor check, get(a) for tensor check,
         # then get(a) for execution, then get(quality_score) for execution.
         calls = [c.args[0] for c in mock_get.call_args_list]

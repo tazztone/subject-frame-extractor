@@ -9,7 +9,6 @@ from core.managers import (
     ThumbnailManager,
     get_face_analyzer,
     get_face_landmarker,
-    initialize_analysis_models,
 )
 
 
@@ -229,20 +228,16 @@ class TestManagers:
         mock_cls.create_from_options.assert_called()
         assert detector == mock_cls.create_from_options.return_value
 
-    @patch("core.managers.model_loader.get_face_analyzer")
-    @patch("core.managers.model_loader.download_model")
+    @patch("core.io_utils.download_model")
     @patch("pathlib.Path.exists", return_value=True)
     @patch("pathlib.Path.is_file", return_value=True)
-    @patch("core.managers.model_loader.get_face_landmarker")
     @patch("cv2.imread", return_value=np.zeros((100, 100, 3)))
     def test_initialize_analysis_models(
         self,
         mock_imread,
-        mock_get_landmarker,
         mock_isfile,
         mock_exists,
         mock_download,
-        mock_get_analyzer,
         mock_config,
         mock_logger,
     ):
@@ -253,26 +248,28 @@ class TestManagers:
         params.subject_detector_model = "YOLO12l-Seg"
         params.model_dump.return_value = {"subject_detector_model": "YOLO12l-Seg"}
 
-        model_registry = MagicMock()
+        model_registry = ModelRegistry(logger=mock_logger, config=mock_config)
 
         mock_analyzer = MagicMock()
-        mock_get_analyzer.return_value = mock_analyzer
-
-        # Mock face detection result
         mock_face = MagicMock()
         mock_face.det_score = 0.9
         mock_face.normed_embedding = np.zeros(512)
         mock_analyzer.get.return_value = [mock_face]
 
         # Use a scoped patch instead of manual mutation to avoid cross-test pollution
-        with patch("torch.cuda.is_available", return_value=False, create=True):
-            models = initialize_analysis_models(params, mock_config, mock_logger, model_registry)
+        with (
+            patch("torch.cuda.is_available", return_value=False, create=True),
+            patch.object(model_registry, "get_face_analyzer", return_value=mock_analyzer),
+            patch.object(model_registry, "get_face_landmarker", return_value=MagicMock()),
+            patch.object(model_registry, "get_subject_detector", return_value=MagicMock()) as mock_get_subject,
+        ):
+            models = model_registry.get_analysis_models(params, mock_config, mock_logger)
 
-        assert models["face_analyzer"] == mock_analyzer
-        assert models["ref_emb"] is not None
-        assert "subject_detector" in models
-        model_registry.get_subject_detector.assert_called()
-        mock_download.assert_called()  # Landmarker download
+            assert models["face_analyzer"] == mock_analyzer
+            assert models["ref_emb"] is not None
+            assert "subject_detector" in models
+            mock_get_subject.assert_called()
+            mock_download.assert_called()  # Landmarker download
 
     @patch("insightface.app.FaceAnalysis")
     @patch("time.sleep", return_value=None)
@@ -334,14 +331,13 @@ class TestManagers:
         # Should verify warning log
         mock_logger.warning.assert_called()
 
-    @patch("core.managers.model_loader.lpips.LPIPS")
+    @patch("lpips.LPIPS")
     def test_get_lpips_metric(self, mock_lpips):
         mock_instance = mock_lpips.return_value
         mock_instance.to.return_value = mock_instance
 
-        from core.managers.model_loader import get_lpips_metric
-
-        metric = get_lpips_metric(model_name="alex", device="cpu")
+        registry = ModelRegistry()
+        metric = registry.get_lpips_metric(model_name="alex", device="cpu")
 
         mock_lpips.assert_called_once_with(net="alex")
         mock_instance.to.assert_called_once_with("cpu")
@@ -427,20 +423,22 @@ class TestManagers:
 
 def test_validate_session_dir_is_file(tmp_path):
     """Test validation fails if path is a file."""
-    from core.managers import validate_session_dir
+    from core.managers.media_session import MediaSession
 
     p = tmp_path / "some_file.txt"
     p.touch()
 
-    res_path, error = validate_session_dir(str(p))
+    session = MediaSession(session_path=str(p))
+    res_path, error = session.validate_dir()
     assert res_path is None
     assert "does not exist" in error.lower()
 
 
 def test_validate_session_dir_non_existent():
     """Test validation fails if path does not exist."""
-    from core.managers import validate_session_dir
+    from core.managers.media_session import MediaSession
 
-    res_path, error = validate_session_dir("/non/existent/path")
+    session = MediaSession(session_path="/non/existent/path")
+    res_path, error = session.validate_dir()
     assert res_path is None
     assert "does not exist" in error.lower()

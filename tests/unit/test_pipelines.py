@@ -166,7 +166,7 @@ def test_execute_propagation_no_scenes(mock_runtime, default_pre_analysis_event)
     pre_event = PreAnalysisEvent(**default_pre_analysis_event)
     event = PropagationEvent(output_folder="/tmp/out", video_path="test.mp4", scenes=[], analysis_params=pre_event)
 
-    with patch("core.pipelines._load_analysis_scenes", return_value=[]):
+    with patch("core.pipelines.MediaSession.load_analysis_scenes", return_value=[]):
         gen = execute_propagation(event, mock_runtime["context"])
         results = list(gen)
 
@@ -189,7 +189,7 @@ def test_execute_analysis_success(mock_runtime, tmp_path, default_pre_analysis_e
 
     with (
         patch("core.pipelines.AnalysisPipeline") as mock_pipeline_cls,
-        patch("core.pipelines._load_analysis_scenes", return_value=[MagicMock()]),
+        patch("core.pipelines.MediaSession.load_analysis_scenes", return_value=[MagicMock()]),
     ):
         mock_pipeline = mock_pipeline_cls.return_value
         mock_pipeline.run_analysis_only.return_value = {"done": True, "output_dir": str(out_dir)}
@@ -230,10 +230,10 @@ def test_execute_pre_analysis_with_upload(mock_runtime, tmp_path, default_pre_an
 def test_validate_session_dir_and_load(mock_runtime, tmp_path):
     from core.pipelines import execute_session_load, validate_session_dir
 
-    with patch("core.pipelines._validate_session_dir", return_value=(Path("/tmp/session"), None)):
+    with patch("core.pipelines.MediaSession.validate_dir", return_value=(Path("/tmp/session"), None)):
         assert validate_session_dir("/tmp/session") is True
 
-    with patch("core.pipelines._execute_session_load", return_value={"ok": True}):
+    with patch("core.pipelines.MediaSession.execute_session_load", return_value={"ok": True}):
         session_path = tmp_path / "session"
         session_path.mkdir()
         assert execute_session_load({"session_path": str(session_path)}, mock_runtime["logger"]) == {"ok": True}
@@ -253,7 +253,7 @@ def test_execute_propagation_success(mock_runtime, tmp_path, default_pre_analysi
 
     with (
         patch("core.pipelines.AnalysisPipeline") as mock_pipeline_cls,
-        patch("core.pipelines._load_analysis_scenes", return_value=[MagicMock()]),
+        patch("core.pipelines.MediaSession.load_analysis_scenes", return_value=[MagicMock()]),
         patch("core.pipelines.MediaSession.get_video_info", return_value={}),
         patch("core.pipelines.estimate_totals", return_value={"propagation": 10}),
     ):
@@ -277,7 +277,7 @@ def test_execute_propagation_failure(mock_runtime, default_pre_analysis_event):
 
     with (
         patch("core.pipelines.AnalysisPipeline") as mock_pipeline_cls,
-        patch("core.pipelines._load_analysis_scenes", return_value=[MagicMock()]),
+        patch("core.pipelines.MediaSession.load_analysis_scenes", return_value=[MagicMock()]),
         patch("core.pipelines.MediaSession.get_video_info", return_value={}),
         patch("core.pipelines.estimate_totals", return_value={}),
     ):
@@ -301,7 +301,7 @@ def test_execute_analysis_failure(mock_runtime, default_pre_analysis_event):
 
     with (
         patch("core.pipelines.AnalysisPipeline") as mock_pipeline_cls,
-        patch("core.pipelines._load_analysis_scenes", return_value=[MagicMock()]),
+        patch("core.pipelines.MediaSession.load_analysis_scenes", return_value=[MagicMock()]),
     ):
         mock_pipeline = mock_pipeline_cls.return_value
         mock_pipeline.run_analysis_only.return_value = {"done": False, "error": "failed"}
@@ -324,7 +324,7 @@ def test_execute_propagation_is_folder(mock_runtime, default_pre_analysis_event)
 
     with (
         patch("core.pipelines.AnalysisPipeline") as mock_pipeline_cls,
-        patch("core.pipelines._load_analysis_scenes", return_value=[MagicMock()]),
+        patch("core.pipelines.MediaSession.load_analysis_scenes", return_value=[MagicMock()]),
     ):
         mock_pipeline = mock_pipeline_cls.return_value
         mock_pipeline.run_full_analysis.return_value = {"done": True, "output_dir": "/tmp/out"}

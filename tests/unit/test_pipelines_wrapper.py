@@ -75,7 +75,7 @@ def test_execute_pre_analysis(mock_load, mock_pipeline_cls, mock_config, mock_lo
 
 
 @patch("core.pipelines.AnalysisPipeline")
-@patch("core.pipelines._load_analysis_scenes")
+@patch("core.pipelines.MediaSession.load_analysis_scenes")
 @patch("core.pipelines.MediaSession.get_video_info", return_value={"fps": 30, "frame_count": 100})
 def test_execute_propagation(mock_vinfo, mock_load, mock_pipeline_cls, mock_config, mock_logger, tmp_path):
     mock_pipeline = mock_pipeline_cls.return_value
@@ -112,7 +112,7 @@ def test_execute_propagation(mock_vinfo, mock_load, mock_pipeline_cls, mock_conf
 
 
 @patch("core.pipelines.AnalysisPipeline")
-@patch("core.pipelines._load_analysis_scenes")
+@patch("core.pipelines.MediaSession.load_analysis_scenes")
 def test_execute_analysis(mock_load, mock_pipeline_cls, mock_config, mock_logger, tmp_path):
     mock_pipeline = mock_pipeline_cls.return_value
     mock_pipeline.run_analysis_only.return_value = {"done": True, "output_dir": str(tmp_path)}

@@ -75,10 +75,10 @@ class TestMockFilters:
 
         page = app_driver.page
 
-        q_min = page.locator("div:has-text('Quality Score')").locator("input[aria-label='Min']").first
+        q_min = page.locator("#slider_quality_score_min input[type='number']")
         expect(q_min).to_be_visible()
         q_min.fill("95")  # Set very high
 
         # Wait for reactive update
         page.wait_for_timeout(2000)
-        expect(page.locator("div").get_by_text("Kept")).to_be_visible()
+        expect(page.get_by_text("Kept:")).to_be_visible()

@@ -1092,7 +1092,7 @@ class AppUI:
             }
             for k in self._get_all_filter_keys():
                 acc = c["metric_accs"].get(k)
-                has_data = k in metric_values and metric_values.get(k)
+                has_data = bool(k in metric_values and metric_values.get(k))
                 if acc:
                     updates[acc] = gr.update(visible=has_data)
                 if k in c["metric_plots"]:
@@ -1377,6 +1377,7 @@ class AppUI:
             self.config,
             self.logger,
         )
+        self.logger.info(msg)
         return {
             self.components["application_state"]: state,
             self.components["unified_status"]: msg,

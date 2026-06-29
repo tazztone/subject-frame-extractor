@@ -28,16 +28,6 @@ from core.managers import (
     ModelRegistry,
     PreAnalysisPipeline,
     _load_scenes,
-    initialize_analysis_models,
-)
-from core.managers.media_session import (
-    execute_session_load as _execute_session_load,
-)
-from core.managers.media_session import (
-    load_analysis_scenes as _load_analysis_scenes,
-)
-from core.managers.media_session import (
-    validate_dir as _validate_session_dir,
 )
 from core.models import (
     AnalysisParameters,
@@ -190,14 +180,16 @@ def execute_pre_analysis(
 
 
 def validate_session_dir(path: str) -> bool:
-    p, err = _validate_session_dir(path)
+    session = MediaSession(config=None, session_path=path)
+    p, err = session.validate_dir()
     return p is not None and err is None
 
 
 def execute_session_load(event: SessionLoadEvent | dict, logger: AppLogger) -> dict:
     if isinstance(event, dict):
         event = SessionLoadEvent(**event)
-    return _execute_session_load(event, logger)
+    session = MediaSession(config=None, session_path=event.session_path)
+    return session.execute_session_load(event, logger)
 
 
 @handle_common_errors(PropagationResult)
@@ -216,7 +208,8 @@ def execute_propagation(
 
     params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
     is_folder = not params.video_path
-    scenes = _load_analysis_scenes(event.scenes, is_folder)
+    session = MediaSession(config, source_path=params.video_path or "")
+    scenes = session.load_analysis_scenes(event.scenes, is_folder)
 
     if not scenes:
         yield PropagationResult(unified_log="No scenes to propagate.", output_dir="", done=True)
@@ -226,7 +219,7 @@ def execute_propagation(
     if is_folder:
         tracker.start(len(scenes), desc="Analyzing Images")
     else:
-        v_info = MediaSession.get_video_info(params.video_path)
+        v_info = session.get_video_info()
         totals = estimate_totals(params, v_info, scenes)
         tracker.start(totals.get("propagation", 0) + len(scenes), desc="Propagating Masks")
 
@@ -272,7 +265,8 @@ def execute_analysis(
     loaded_models = context.loaded_models
 
     params = AnalysisParameters.from_ui(logger, config, **event.analysis_params.model_dump())
-    scenes = _load_analysis_scenes(event.scenes, not params.video_path)
+    session = MediaSession(config, source_path=params.video_path or "")
+    scenes = session.load_analysis_scenes(event.scenes, not params.video_path)
 
     if not scenes:
         yield AnalysisResult(unified_log="No scenes to analyze.", output_dir="", done=True)
@@ -319,7 +313,7 @@ def execute_analysis_orchestrator(
     params = AnalysisParameters.from_ui(logger, config, **event.model_dump())
 
     if not context.loaded_models:
-        context.loaded_models = initialize_analysis_models(params, config, logger, mr)
+        context.loaded_models = mr.get_analysis_models(params)
 
     # 1. Pre-Analysis
     pre_result = None

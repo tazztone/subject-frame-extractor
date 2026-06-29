@@ -46,7 +46,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`extraction.py`](#-coremanagersextractionpy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`face.py`](#-coremanagersfacepy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`media_session.py`](#-coremanagersmedia_sessionpy)  
-│&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`model_loader.py`](#-coremanagersmodel_loaderpy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`registry.py`](#-coremanagersregistrypy)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`sam3.py`](#-coremanagerssam3py)  
 │&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├──&nbsp;[`subject_detector.py`](#-coremanagerssubject_detectorpy)  
@@ -463,7 +462,6 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_mask_propagator_logic.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_mask_propagator_oom.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_media_session.py  
-│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_model_loader.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_model_registry.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_models.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_models_property.py  
@@ -887,7 +885,7 @@ def load_and_prep_filter_data(output_dir: str, get_all_filter_keys: Callable, co
 def build_all_metric_svgs(per_metric_values: dict, get_all_filter_keys: Callable, logger: 'AppLogger') -> dict: ...
 def _extract_metric_arrays(all_frames_data: List[Dict[str, Any]], config: 'Config') -> Dict[str, np.ndarray]: ...
 def _apply_metric_filters(all_frames_data: List[Dict[str, Any]], metric_arrays: Dict[str, np.ndarray], filters: Dict[str, Any], config: 'Config') -> Tuple[np.ndarray, defaultdict]: ...
-def apply_all_filters_vectorized(all_frames_data: List[Dict[str, Any]], filters: Dict[str, Any], config: 'Config', thumbnail_manager: Optional['ThumbnailManager']=None, output_dir: Optional[str]=None) -> tuple[list, list, Counter, dict]: ...
+def apply_all_filters_vectorized(all_frames_data: List[Dict[str, Any]], filters: Dict[str, Any], config: 'Config', thumbnail_manager: Optional['ThumbnailManager']=None, output_dir: Optional[str]=None, model_registry: Optional[Any]=None) -> tuple[list, list, Counter, dict]: ...
 ```
 
 ### `📄 core/fingerprint.py`
@@ -1057,41 +1055,16 @@ def get_face_analyzer(model_name: str, models_path: str, det_size_tuple: tuple, 
 
 ```python
 logger = logging.getLogger(__name__)
-def validate_dir(path: Union[str, Path]) -> tuple[Optional[Path], Optional[str]]:
-    """Checks if the provided path is a valid session directory."""
-def get_video_info(video_path: Optional[str]) -> dict:
-    """Extracts metadata from the video file."""
-def load_analysis_scenes(scenes_data: List[dict], is_folder_mode: bool, include_only: bool=True) -> List[Scene]:
-    """Converts raw scene data to Scene objects."""
-def execute_session_load(event: 'SessionLoadEvent', logger: 'AppLogger') -> dict:
-    """Loads session state from disk."""
 class MediaSession:
     """Consolidated manager for media lifecycles, YouTube downloads, and session loa..."""
-    def __init__(self, config: 'Config', source_path: str, session_path: Optional[str]=None, max_resolution: Optional[str]=None): ...
+    def __init__(self, config: Optional['Config']=None, source_path: str='', session_path: Optional[str]=None, max_resolution: Optional[str]=None): ...
     def prepare_video(self, logger: 'AppLogger') -> str:
         """Downloads or validates the video source."""
-    @staticmethod
-    def get_video_info(video_path: Optional[str]) -> dict:
-        """Static wrapper to extract metadata from a video file."""
-    @staticmethod
-    def validate_dir(path: Union[str, Path]) -> tuple[Optional[Path], Optional[str]]:
-        """Static wrapper to validate session directory."""
-    @staticmethod
-    def load_analysis_scenes(scenes_data: List[dict], is_folder_mode: bool, include_only: bool=True) -> List[Scene]:
-        """Static wrapper to load analysis scenes."""
-    @staticmethod
-    def execute_session_load(event: 'SessionLoadEvent', logger: 'AppLogger') -> dict:
-        """Static method to load session state from disk."""
+    def validate_dir(self, path: Optional[Union[str, Path]]=None) -> tuple[Optional[Path], Optional[str]]: ...
+    def get_video_info(self, video_path: Optional[str]=None) -> dict: ...
+    def load_analysis_scenes(self, scenes_data: List[dict], is_folder_mode: bool=False, include_only: bool=True) -> List[Scene]: ...
+    def execute_session_load(self, event: 'SessionLoadEvent', logger: 'AppLogger') -> dict: ...
 VideoManager = MediaSession
-```
-
-### `📄 core/managers/model_loader.py`
-
-```python
-def get_lpips_metric(model_name: str='alex', device: str='cpu'):
-    """Returns the LPIPS metric model."""
-def initialize_analysis_models(params: Union[dict, 'AnalysisParameters'], config: 'Config', logger: 'AppLogger', model_registry: 'ModelRegistry') -> dict:
-    """Compatibility/deprecation wrapper. Delegates directly to ModelRegistry."""
 ```
 
 ### `📄 core/managers/registry.py`
@@ -1113,6 +1086,10 @@ class ModelRegistry:
     def get_subject_detector(self, model_name: str, model_path: Optional[str]=None, logger: Optional['LoggerLike']=None, device: Optional[str]=None) -> Optional[Any]:
         """Retrieves or loads a subject detector (YOLO family) with CPU fallback on OOM,..."""
     def _load_tracker_impl(self, model_name: str, models_path: str, user_agent: str, retry_params: tuple, device: str, config: Optional['Config']=None): ...
+    def get_analysis_models(self, params: Any, config: Optional['Config']=None, logger: Optional['LoggerLike']=None) -> dict:
+        """Downloads, initializes, and returns the requested ML models under a unified r..."""
+    def get_lpips_metric(self, model_name: str='alex', device: str='cpu') -> Any:
+        """Retrieves or loads the LPIPS metric model cached in the registry."""
 ```
 
 ### `📄 core/managers/sam3.py`
@@ -1305,8 +1282,8 @@ def crop_image_with_subject(image: np.ndarray, mask: np.ndarray, aspect_ratios: 
 ### `📄 core/operators/dedup.py`
 
 ```python
-def _run_batched_lpips(pairs: List[Tuple[int, int]], all_frames_data: List[Dict[str, Any]], dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', output_dir: str, threshold: float, device: str='cpu'): ...
-def apply_deduplication_filter(all_frames_data: List[Dict[str, Any]], filters: Dict[str, Any], thumbnail_manager: Optional['ThumbnailManager'], config: 'Config', output_dir: Optional[str]) -> Tuple[np.ndarray, Dict[str, List[str]]]: ...
+def _run_batched_lpips(pairs: List[Tuple[int, int]], all_frames_data: List[Dict[str, Any]], dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', output_dir: str, threshold: float, device: str='cpu', model_registry: Optional[Any]=None): ...
+def apply_deduplication_filter(all_frames_data: List[Dict[str, Any]], filters: Dict[str, Any], thumbnail_manager: Optional['ThumbnailManager'], config: 'Config', output_dir: Optional[str], model_registry: Optional[Any]=None) -> Tuple[np.ndarray, Dict[str, List[str]]]: ...
 def _generic_dedup(all_frames_data: List[Dict[str, Any]], dedup_mask: np.ndarray, reasons: defaultdict, thumbnail_manager: 'ThumbnailManager', output_dir: Optional[str], compare_fn: Callable[[np.ndarray, np.ndarray], bool]): ...
 ```
 
@@ -1418,12 +1395,13 @@ class OperatorRegistry:
     @classmethod
     def clear(cls) -> None:
         """Clear all registrations (useful for testing)."""
+    @classmethod
+    def execute(cls, ctx: OperatorContext, operators: Optional[list[str]]=None) -> dict[str, OperatorResult]:
+        """Runs registered operators using the provided context."""
 def discover_operators(package_path: str='core.operators') -> list[str]:
     """Auto-discover and register operators from a package."""
 def register_operator(cls: Type[Operator]) -> Type[Operator]:
     """Decorator to register an operator class."""
-def run_operators(image_rgb: Any, mask: Optional[Any]=None, config: Optional[Any]=None, operators: Optional[list[str]]=None, params: Optional[dict]=None, model_registry: Optional[Any]=None, logger: Optional[Any]=None, shared_data: Optional[dict]=None) -> dict[str, OperatorResult]:
-    """Bridge function to run operators on an image."""
 ```
 
 ### `📄 core/operators/sharpness.py`
@@ -1583,8 +1561,6 @@ def set_batch_scene_status(scenes_list: list['Scene'], selected_shot_ids: list[i
     """Toggle the status of multiple selected scenes."""
 def toggle_scene_status(scenes_list: list['Scene'], selected_shot_id: int, new_status: str, output_folder: str, logger: 'AppLogger') -> tuple[list, str, str, Any]:
     """Toggle the status of a selected scene."""
-def initialize_analysis_models(*args, **kwargs):
-    """Lazy wrapper to break circular imports while remaining patchable."""
 def _create_analysis_context(config: 'Config', logger: 'AppLogger', thumbnail_manager: 'ThumbnailManager', cuda_available: bool, ana_ui_map_keys: list[str], ana_input_components: list, model_registry: 'ModelRegistry') -> 'SubjectMasker':
     """Helper to initialize a SubjectMasker from UI arguments."""
 def _recompute_single_preview(scene_state: 'SceneState', masker: 'SubjectMasker', overrides: dict, thumbnail_manager: 'ThumbnailManager', logger: 'AppLogger'):

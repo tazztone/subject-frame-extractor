@@ -33,7 +33,7 @@ def test_execute_analysis_schema():
         mock_scene = MagicMock()
         mock_scene.start_frame = 0
         mock_scene.end_frame = 10
-        with patch("core.pipelines._load_analysis_scenes", return_value=[mock_scene]):
+        with patch("core.pipelines.MediaSession.load_analysis_scenes", return_value=[mock_scene]):
             with patch("core.pipelines.MediaSession.get_video_info"):
                 with patch("core.pipelines.AnalysisPipeline") as mock_init:
                     mock_pipe = MagicMock()

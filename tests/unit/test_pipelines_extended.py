@@ -11,7 +11,7 @@ from core.pipelines import AnalysisPipeline, PreAnalysisEvent, PreAnalysisPipeli
 
 @pytest.fixture(autouse=True)
 def mock_download_model():
-    with patch("core.utils.download_model"), patch("core.managers.model_loader.download_model"):
+    with patch("core.io_utils.download_model"):
         yield
 
 
@@ -56,9 +56,8 @@ class TestPipelinesExtended:
             )
         return pipeline
 
-    @patch("core.managers.analysis.initialize_analysis_models")
     @patch("core.managers.analysis.SubjectMasker")
-    def test_run_full_analysis_propagation(self, mock_masker_cls, mock_init_models, pipeline, mock_params):
+    def test_run_full_analysis_propagation(self, mock_masker_cls, pipeline, mock_params):
         # Setup mocks
         mock_models = {
             "face_analyzer": MagicMock(),
@@ -67,7 +66,7 @@ class TestPipelinesExtended:
             "device": "cpu",
             "subject_detector": MagicMock(),
         }
-        mock_init_models.return_value = mock_models
+        pipeline.model_registry.get_analysis_models.return_value = mock_models
 
         mock_masker = mock_masker_cls.return_value
         # run_propagation returns a dict of metadata
@@ -91,12 +90,11 @@ class TestPipelinesExtended:
         if not result.get("done"):
             pytest.fail(f"Pipeline failed: {result}")
 
-        mock_init_models.assert_called()
+        pipeline.model_registry.get_analysis_models.assert_called()
         mock_masker.run_propagation.assert_called()
         assert pipeline.mask_metadata == {"frame_0.png": {"mask_path": "path"}}
 
-    @patch("core.managers.analysis.initialize_analysis_models")
-    def test_run_analysis_only(self, mock_init_models, pipeline, mock_params):
+    def test_run_analysis_only(self, pipeline, mock_params):
         # Setup mocks
         mock_models = {
             "face_analyzer": MagicMock(),
@@ -105,7 +103,7 @@ class TestPipelinesExtended:
             "device": "cpu",
             "subject_detector": MagicMock(),
         }
-        mock_init_models.return_value = mock_models
+        pipeline.model_registry.get_analysis_models.return_value = mock_models
 
         mock_scene = MagicMock()
         mock_scene.shot_id = 1
@@ -125,7 +123,7 @@ class TestPipelinesExtended:
             pytest.fail(f"Pipeline failed: {result}")
 
         # Verify
-        mock_init_models.assert_called()
+        pipeline.model_registry.get_analysis_models.assert_called()
         pipeline._run_analysis_loop.assert_called()
         pipeline.db.flush.assert_called()
 
@@ -136,20 +134,16 @@ class TestPipelinesExtended:
         mock_scene.shot_id = 1
         scenes = [mock_scene]
 
-        # Mock dependencies to reach cancellation check
-        with patch(
-            "core.managers.analysis.initialize_analysis_models",
-            return_value={
-                "face_analyzer": None,
-                "ref_emb": None,
-                "face_landmarker": None,
-                "device": "cpu",
-                "subject_detector": None,
-            },
-        ):
-            with patch("core.managers.analysis.SubjectMasker"):
-                # Should return early or log cancellation
-                result = pipeline.run_full_analysis(scenes)
+        pipeline.model_registry.get_analysis_models.return_value = {
+            "face_analyzer": None,
+            "ref_emb": None,
+            "face_landmarker": None,
+            "device": "cpu",
+            "subject_detector": None,
+        }
+        with patch("core.managers.analysis.SubjectMasker"):
+            # Should return early or log cancellation
+            result = pipeline.run_full_analysis(scenes)
 
         # Logic returns {"log": "Propagation cancelled.", "done": False} OR just loops.
         # If cancellation is checked inside the loop:
@@ -180,15 +174,12 @@ class TestPreAnalysisPipeline:
             model_registry=mock_registry,
         )
 
-    @patch("core.managers.analysis.initialize_analysis_models")
     @patch("core.managers.analysis.SubjectMasker")
     @patch("core.managers.analysis.save_scene_seeds")
     @patch("PIL.Image.fromarray")
-    def test_pre_analysis_run(
-        self, mock_img_save, mock_save_seeds, mock_masker_cls, mock_init_models, pre_pipeline, tmp_path
-    ):
+    def test_pre_analysis_run(self, mock_img_save, mock_save_seeds, mock_masker_cls, pre_pipeline, tmp_path):
         # Setup mocks
-        mock_init_models.return_value = {
+        pre_pipeline.model_registry.get_analysis_models.return_value = {
             "face_analyzer": MagicMock(),
             "ref_emb": MagicMock(),
             "face_landmarker": MagicMock(),

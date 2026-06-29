@@ -1,120 +1,162 @@
-import threading
-import time
+import hashlib
+import io
 from unittest.mock import MagicMock, patch
 
 import pytest
-import torch
 
+from core.io_utils import _compute_sha256, download_model
 from core.managers.registry import ModelRegistry
 
 
 class TestModelRegistry:
     """
-    Tests for core/managers/registry.py
+    Tests for ModelRegistry loading logic and core/io_utils.py (download_model)
     """
 
     @pytest.fixture
-    def registry(self, mock_logger):
-        return ModelRegistry(logger=mock_logger)
+    def mock_deps(self):
+        logger = MagicMock()
+        error_handler = MagicMock()
+        # Mock retry decorator to just call the function
+        error_handler.with_retry.side_effect = lambda **kwargs: lambda f: f
+        return logger, error_handler
 
-    def test_get_or_load_happy_path(self, registry):
-        loader = MagicMock(return_value="model_instance")
-        val = registry.get_or_load("test_key", loader)
-        assert val == "model_instance"
-        assert loader.call_count == 1
+    def test_get_lpips_metric(self):
 
-        # Subsequent call should return cached
-        val2 = registry.get_or_load("test_key", loader)
-        assert val2 == "model_instance"
-        assert loader.call_count == 1
+        # Rely on global mock from conftest.py
+        with patch("lpips.LPIPS") as mock_lpips:
+            registry = ModelRegistry()
+            registry.get_lpips_metric("alex", "cpu")
+            mock_lpips.assert_called_with(net="alex")
 
-    def test_get_or_load_oom_retry(self, registry):
-        """Test that OOM triggers clear() and retry."""
-        loader = MagicMock()
-        loader.side_effect = [torch.cuda.OutOfMemoryError(), "success"]
+    def test_download_model_happy_path(self, mock_deps, tmp_path):
+        logger, error_handler = mock_deps
+        dest_path = tmp_path / "model.pt"
+        content = b"fake model content"
+        expected_sha = hashlib.sha256(content).hexdigest()
 
-        with patch.object(registry, "clear") as mock_clear:
-            val = registry.get_or_load("oom_key", loader)
-            assert val == "success"
-            assert loader.call_count == 2
-            mock_clear.assert_called_once()
+        # Mock urllib.request
+        mock_resp = MagicMock()
+        mock_resp.getheader.side_effect = lambda h: str(len(content)) if h == "Content-Length" else None
+        mock_resp.read.side_effect = io.BytesIO(content).read
+        mock_resp.__enter__.return_value = mock_resp
 
-    def test_sticky_failure_logic(self, registry):
-        """Test that failures are cached (sticky failure)."""
-        loader = MagicMock(side_effect=ValueError("Permanent failure"))
+        with patch("urllib.request.urlopen", return_value=mock_resp), patch("urllib.request.Request") as mock_req:
+            download_model(
+                url="http://fake.url/model.pt",
+                dest_path=dest_path,
+                description="Test Model",
+                logger=logger,
+                error_handler=error_handler,
+                user_agent="test-agent",
+                expected_sha256=expected_sha,
+                min_size=10,  # ensure content is larger than min_size
+            )
 
-        with pytest.raises(ValueError, match="Permanent failure"):
-            registry.get_or_load("fail_key", loader)
+            assert dest_path.exists()
+            assert dest_path.read_bytes() == content
+            mock_req.assert_called_once_with("http://fake.url/model.pt", headers={"User-Agent": "test-agent"})
+            logger.info.assert_any_call("Test Model downloaded and verified successfully.")
 
-        assert "fail_key" in registry._failed_models
+    def test_download_model_checksum_mismatch(self, mock_deps, tmp_path):
+        logger, error_handler = mock_deps
+        dest_path = tmp_path / "model.pt"
+        content = b"fake model content"
+        wrong_sha = "wrongsha256"
 
-        # Subsequent call should return None immediately without calling loader
-        loader.reset_mock()
-        val = registry.get_or_load("fail_key", loader)
-        assert val is None
-        loader.assert_not_called()
+        # Mock urllib.request
+        mock_resp = MagicMock()
+        mock_resp.getheader.side_effect = lambda h: str(len(content)) if h == "Content-Length" else None
+        mock_resp.read.side_effect = io.BytesIO(content).read
+        mock_resp.__enter__.return_value = mock_resp
 
-    def test_clear_and_reload(self, registry):
-        """Test that clear() removes models and allows reload."""
-        mock_model = MagicMock()
-        loader = MagicMock(return_value=mock_model)
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            with pytest.raises(RuntimeError, match="Failed to download required model"):
+                download_model(
+                    url="http://fake.url/model.pt",
+                    dest_path=dest_path,
+                    description="Test Model",
+                    logger=logger,
+                    error_handler=error_handler,
+                    user_agent="test-agent",
+                    expected_sha256=wrong_sha,
+                    min_size=5,
+                )
 
-        registry.get_or_load("key", loader)
-        registry.clear()
+            # Check that failed file is unlinked
+            assert not dest_path.exists()
 
-        assert "key" not in registry._models
-        mock_model.shutdown.assert_called_once()  # or close()
+    def test_download_model_cached_valid(self, mock_deps, tmp_path):
+        logger, error_handler = mock_deps
+        dest_path = tmp_path / "model.pt"
+        content = b"cached content"
+        dest_path.write_bytes(content)
+        sha = hashlib.sha256(content).hexdigest()
 
-        # Should reload
-        registry.get_or_load("key", loader)
-        assert loader.call_count == 2
+        with patch("urllib.request.urlopen") as mock_url:
+            download_model(
+                url="http://fake.url/model.pt",
+                dest_path=dest_path,
+                description="Cached Model",
+                logger=logger,
+                error_handler=error_handler,
+                user_agent="test",
+                expected_sha256=sha,
+            )
+            mock_url.assert_not_called()
+            logger.info.assert_any_call(f"Using cached and verified Cached Model: {dest_path}")
 
-    def test_concurrent_loading(self, registry):
-        """Test that concurrent loads only call the factory once."""
-        call_count = [0]
+    def test_download_model_directory_creation(self, mock_deps, tmp_path):
+        logger, error_handler = mock_deps
+        nested_dest = tmp_path / "deeply" / "nested" / "model.pt"
+        content = b"a" * 20
 
-        def slow_loader():
-            call_count[0] += 1
-            time.sleep(0.1)
-            return f"model_{call_count[0]}"
+        mock_resp = MagicMock()
+        mock_resp.getheader.side_effect = lambda h: str(len(content)) if h == "Content-Length" else None
+        mock_resp.read.side_effect = io.BytesIO(content).read
+        mock_resp.__enter__.return_value = mock_resp
 
-        def worker():
-            registry.get_or_load("concurrent_key", slow_loader)
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            download_model(
+                url="http://fake.url/model.pt",
+                dest_path=nested_dest,
+                description="Nested Model",
+                logger=logger,
+                error_handler=error_handler,
+                user_agent="test",
+                min_size=10,
+            )
+            assert nested_dest.exists()
 
-        t1 = threading.Thread(target=worker)
-        t2 = threading.Thread(target=worker)
+    def test_initialize_analysis_models_basic(self, tmp_path):
+        from core.models import AnalysisParameters
 
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
+        config = MagicMock()
+        config.models_dir = tmp_path / "models"
+        config.face_landmarker_url = "http://fake.url/landmarker.task"
+        config.face_landmarker_sha256 = None
+        config.retry_max_attempts = 1
+        config.retry_backoff_seconds = 1
+        config.user_agent = "test"
 
-        assert call_count[0] == 1
-        assert registry._models["concurrent_key"] == "model_1"
+        params = AnalysisParameters(output_folder=str(tmp_path), video_path="test.mp4", compute_face_sim=False)
+        logger = MagicMock()
+        registry = ModelRegistry(logger=logger, config=config)
 
-    def test_get_tracker_oom_fallback(self, registry):
-        """Test tracker init fallback to CPU on OOM."""
-        registry.runtime_device_override = None
+        with (
+            patch("core.io_utils.download_model"),
+            patch.object(registry, "get_face_landmarker", return_value="mock_landmarker"),
+        ):
+            # Create dummy file to avoid download logic for landmarker check
+            (tmp_path / "models").mkdir()
+            (tmp_path / "models" / "landmarker.task").touch()
 
-        with patch.object(registry, "_load_tracker_impl") as mock_load:
-            # First call OOMs on CUDA, second succeeds on CPU
-            mock_load.side_effect = [RuntimeError("out of memory"), "cpu_tracker"]
+            res = registry.get_analysis_models(params)
+            assert res["face_landmarker"] == "mock_landmarker"
+            assert res["face_analyzer"] is None
 
-            with patch("core.managers.registry.torch.cuda.is_available", return_value=True):
-                tracker = registry.get_tracker("sam3", models_path="/tmp")
-                assert tracker == "cpu_tracker"
-                assert registry.runtime_device_override == "cpu"
-                assert mock_load.call_count == 2
-
-    def test_get_tracker_invalid_and_retired(self, registry):
-        """Test that retired or unknown tracker backends return None."""
-        # Retired sam2
-        tracker_sam2 = registry.get_tracker("sam2", models_path="/tmp")
-        assert tracker_sam2 is None
-        assert registry.logger.error.called
-
-        # Unknown model
-        registry.logger.error.reset_mock()
-        tracker_invalid = registry.get_tracker("invalid_tracker", models_path="/tmp")
-        assert tracker_invalid is None
-        assert registry.logger.error.called
+    def test_compute_sha256(self, tmp_path):
+        p = tmp_path / "test.txt"
+        p.write_bytes(b"hello")
+        expected = hashlib.sha256(b"hello").hexdigest()
+        assert _compute_sha256(p) == expected

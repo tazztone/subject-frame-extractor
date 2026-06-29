@@ -117,9 +117,22 @@ class TestSystemLogsRegression:
 class TestPropagationErrorHandling:
     """Tests for propagation error handling (Bug 1)."""
 
-    def test_propagate_button_found(self, analyzed_session):
+    def test_propagate_button_found(self, app_driver: AppDriver):
         """Propagate button should be present on the Scenes tab."""
-        driver = AppDriver(analyzed_session)
-        driver.navigate(Labels.TAB_SCENES)
+        # 1. Extraction
+        app_driver.page.locator(Selectors.SOURCE_INPUT).fill("dummy_video.mp4")
+        app_driver.page.locator(Selectors.START_EXTRACTION).click()
+        expect(app_driver.page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_EXTRACTION, timeout=30000
+        )
 
-        expect(driver.page.locator(Selectors.PROPAGATE_MASKS)).to_be_attached(timeout=5000)
+        # 2. Pre-Analysis
+        app_driver.navigate(Labels.TAB_SUBJECT)
+        app_driver.page.locator(Selectors.START_PRE_ANALYSIS).click()
+        expect(app_driver.page.locator(Selectors.UNIFIED_STATUS)).to_contain_text(
+            Selectors.STATUS_SUCCESS_PRE_ANALYSIS, timeout=30000
+        )
+
+        # 3. Navigate to Scenes tab and check Propagate button
+        app_driver.navigate(Labels.TAB_SCENES)
+        expect(app_driver.page.locator(Selectors.PROPAGATE_MASKS)).to_be_attached(timeout=5000)

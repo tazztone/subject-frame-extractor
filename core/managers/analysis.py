@@ -27,13 +27,12 @@ from core.enums import SceneStatus
 from core.error_handling import ErrorHandler
 from core.io_utils import create_frame_map
 from core.models import AnalysisParameters, Frame, Scene
-from core.operators import OperatorRegistry, run_operators
+from core.operators import OperatorRegistry
+from core.operators.base import OperatorContext
 from core.progress import AdvancedProgressTracker
 from core.scene_utils.helpers import save_scene_seeds
 from core.scene_utils.subject_masker import SubjectMasker
 from core.utils import _to_json_safe
-
-from .model_loader import initialize_analysis_models
 
 
 def _load_scenes(output_dir: Path) -> List[Scene]:
@@ -77,7 +76,7 @@ class PreAnalysisPipeline:
         models = (
             self.loaded_models
             if self.loaded_models
-            else initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
+            else self.model_registry.get_analysis_models(self.params, self.config, self.logger)
         )
         is_folder_mode = not self.params.video_path
         niqe_metric = self._initialize_niqe_if_needed(models["device"], is_folder_mode)
@@ -233,7 +232,7 @@ class AnalysisPipeline:
             models = (
                 self.loaded_models
                 if self.loaded_models
-                else initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
+                else self.model_registry.get_analysis_models(self.params, self.config, self.logger)
             )
             self.face_analyzer = models.get("face_analyzer")
             self.reference_embedding = models.get("ref_emb")
@@ -284,7 +283,7 @@ class AnalysisPipeline:
             models = (
                 self.loaded_models
                 if self.loaded_models
-                else initialize_analysis_models(self.params, self.config, self.logger, self.model_registry)
+                else self.model_registry.get_analysis_models(self.params, self.config, self.logger)
             )
             self.face_analyzer = models.get("face_analyzer")
             self.reference_embedding = models.get("ref_emb")
@@ -502,7 +501,7 @@ class AnalysisPipeline:
                         self.logger.warning("Face analysis failed for frame", exc_info=True)
 
             if any(metrics.values()) or self.params.compute_niqe:
-                res = run_operators(
+                ctx = OperatorContext(
                     image_rgb=img,
                     mask=mask_thumb,
                     config=self.config,
@@ -516,6 +515,7 @@ class AnalysisPipeline:
                         "mask_meta": mask_meta,
                     },
                 )
+                res = OperatorRegistry.execute(ctx)
                 for name, r in res.items():
                     if r.success:
                         for k, v in r.metrics.items():

@@ -12,8 +12,6 @@ if TYPE_CHECKING:
     from core.config import Config
     from core.managers import ThumbnailManager
 
-from core.managers.model_loader import get_lpips_metric
-
 
 def _run_batched_lpips(
     pairs: List[Tuple[int, int]],
@@ -24,10 +22,16 @@ def _run_batched_lpips(
     output_dir: str,
     threshold: float,
     device: str = "cpu",
+    model_registry: Optional[Any] = None,
 ):
     if not pairs:
         return
-    loss_fn = get_lpips_metric(device=device)
+    if model_registry is not None:
+        loss_fn = model_registry.get_lpips_metric(device=device)
+    else:
+        import lpips
+
+        loss_fn = lpips.LPIPS(net="alex").to(device)
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     batch_size = 32
     for i in range(0, len(pairs), batch_size):
@@ -69,6 +73,7 @@ def apply_deduplication_filter(
     thumbnail_manager: Optional["ThumbnailManager"],
     config: "Config",
     output_dir: Optional[str],
+    model_registry: Optional[Any] = None,
 ) -> Tuple[np.ndarray, Dict[str, List[str]]]:
     import imagehash
 
@@ -138,6 +143,7 @@ def apply_deduplication_filter(
                 output_dir,
                 filters.get("lpips_threshold", 0.1),
                 device="cuda" if torch.cuda.is_available() else "cpu",
+                model_registry=model_registry,
             )
         elif dedup_method == "pHash then LPIPS" and thumbnail_manager and imagehash and output_dir:
             sorted_indices = sorted(range(num_frames), key=lambda i: filenames[i])
@@ -178,6 +184,7 @@ def apply_deduplication_filter(
                     output_dir,
                     filters.get("lpips_threshold", 0.1),
                     device="cuda" if torch.cuda.is_available() else "cpu",
+                    model_registry=model_registry,
                 )
     return dedup_mask, reasons
 

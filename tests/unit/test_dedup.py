@@ -116,27 +116,31 @@ def test_run_batched_lpips(mock_thumbnail_manager):
 
     mock_loss_fn.forward.return_value = mock_tensor
 
-    with patch("core.operators.dedup.get_lpips_metric", return_value=mock_loss_fn):
-        all_frames = [
-            {"filename": "f1.jpg", "metrics": {"quality_score": 10}},
-            {"filename": "f2.jpg", "metrics": {"quality_score": 20}},
-            {"filename": "f3.jpg", "metrics": {"quality_score": 10}},
-            {"filename": "f4.jpg", "metrics": {"quality_score": 5}},
-        ]
-        pairs = [(0, 1), (2, 3)]
-        dedup_mask = np.array([True, True, True, True])
-        reasons = MagicMock()
-        reasons.__getitem__.return_value = []
+    model_registry = MagicMock()
+    model_registry.get_lpips_metric.return_value = mock_loss_fn
 
-        _run_batched_lpips(pairs, all_frames, dedup_mask, reasons, mock_tm, "/tmp", threshold=0.1)
+    all_frames = [
+        {"filename": "f1.jpg", "metrics": {"quality_score": 10}},
+        {"filename": "f2.jpg", "metrics": {"quality_score": 20}},
+        {"filename": "f3.jpg", "metrics": {"quality_score": 10}},
+        {"filename": "f4.jpg", "metrics": {"quality_score": 5}},
+    ]
+    pairs = [(0, 1), (2, 3)]
+    dedup_mask = np.array([True, True, True, True])
+    reasons = MagicMock()
+    reasons.__getitem__.return_value = []
 
-        # Pair 0 (f1, f2): dist 0.05 <= 0.1. f2 (20) > f1 (10). f1 rejected.
-        assert not dedup_mask[0]
-        assert dedup_mask[1]
+    _run_batched_lpips(
+        pairs, all_frames, dedup_mask, reasons, mock_tm, "/tmp", threshold=0.1, model_registry=model_registry
+    )
 
-        # Pair 1 (f3, f4): dist 0.2 > 0.1. No rejection.
-        assert dedup_mask[2]
-        assert dedup_mask[3]
+    # Pair 0 (f1, f2): dist 0.05 <= 0.1. f2 (20) > f1 (10). f1 rejected.
+    assert not dedup_mask[0]
+    assert dedup_mask[1]
+
+    # Pair 1 (f3, f4): dist 0.2 > 0.1. No rejection.
+    assert dedup_mask[2]
+    assert dedup_mask[3]
 
 
 def test_dedup_ssim(sample_frames_for_dedup, mock_thumbnail_manager, mock_config, tmp_path):

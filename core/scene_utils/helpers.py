@@ -236,13 +236,6 @@ def toggle_scene_status(
     return (scenes_list, status_text, f"Could not find scene {selected_shot_id}.", button_update)
 
 
-def initialize_analysis_models(*args, **kwargs):
-    """Lazy wrapper to break circular imports while remaining patchable."""
-    from core.managers.model_loader import initialize_analysis_models as _init
-
-    return _init(*args, **kwargs)
-
-
 def _create_analysis_context(
     config: "Config",
     logger: "AppLogger",
@@ -272,7 +265,7 @@ def _create_analysis_context(
     ui_args["output_folder"] = str(resolved_outdir)
     params = AnalysisParameters.from_ui(logger, config, **ui_args)
 
-    models = initialize_analysis_models(params, config, logger, model_registry)
+    models = model_registry.get_analysis_models(params)
     frame_map = create_frame_map(resolved_outdir, logger)
     if not frame_map:
         raise RuntimeError("Failed to create frame map. Check if frame_map.json exists and is valid.")

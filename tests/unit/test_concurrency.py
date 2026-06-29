@@ -102,7 +102,7 @@ def test_analysis_pipeline_concurrency(tmp_path):
                 pipeline._process_single_frame(path, {"quality": True}, preloaded=preloaded)
 
         with (
-            patch("core.managers.analysis.run_operators") as mock_run_ops,
+            patch("core.managers.analysis.OperatorRegistry.execute") as mock_run_ops,
             patch("core.managers.analysis.cv2.cvtColor"),
         ):
             mock_run_ops.return_value = {}  # Mock results

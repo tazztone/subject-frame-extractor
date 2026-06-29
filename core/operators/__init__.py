@@ -28,8 +28,9 @@ Quick Start:
         print(f"{cfg.name}: {cfg.display_name}")
 
     # Run operators on an image
-    from core.operators import run_operators
-    results = run_operators(image_rgb, mask=None, config=app_config)
+    from core.operators import OperatorRegistry, OperatorContext
+    ctx = OperatorContext(image_rgb=image_rgb, config=app_config)
+    results = OperatorRegistry.execute(ctx)
 """
 
 from core.operators.base import (
@@ -43,7 +44,6 @@ from core.operators.registry import (
     OperatorRegistry,
     discover_operators,
     register_operator,
-    run_operators,
 )
 
 # Auto-discover all operators in this package
@@ -57,6 +57,5 @@ __all__ = [
     "FilterDefinition",
     "OperatorRegistry",
     "register_operator",
-    "run_operators",
     "discover_operators",
 ]

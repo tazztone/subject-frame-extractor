@@ -177,6 +177,7 @@ def mock_extraction_wrapper(self, current_state: ApplicationState, *args, **kwar
 
     msg = """<div class="success-card"><h3>Extraction Complete</h3></div>"""
 
+    self.logger.info("Extraction Complete.")
     yield {
         self.app.components["application_state"]: new_state,
         self.app.components["unified_status"]: msg,
@@ -218,6 +219,7 @@ def mock_pre_analysis_wrapper(self, current_state: ApplicationState, *args, **kw
 
     msg = """<div class="success-card"><h3>Pre-Analysis Complete</h3></div>"""
 
+    self.logger.info("Pre-Analysis Complete.")
     dummy_img = os.path.join(output_dir, "thumbs", "frame_000001.webp")
     yield {
         self.app.components["application_state"]: new_state,
@@ -253,6 +255,7 @@ def mock_propagation_wrapper(self, current_state: ApplicationState, *args, **kwa
 
     new_state = current_state.model_copy()
     msg = """<div class="success-card"><h3>Mask Propagation Complete</h3></div>"""
+    self.logger.info("Propagation Complete.")
     yield {
         self.app.components["application_state"]: new_state,
         self.app.components["unified_status"]: msg,
@@ -268,6 +271,7 @@ def mock_analysis_wrapper(self, current_state: ApplicationState, *args, **kwargs
     new_state.analysis_metadata_path = "mock_metadata.db"
     new_state.analysis_output_dir = current_state.extracted_frames_dir
     msg = """<div class="success-card"><h3>Analysis Complete</h3></div>"""
+    self.logger.info("Analysis Complete.")
     yield {
         self.app.components["application_state"]: new_state,
         self.app.components["unified_status"]: msg,
@@ -341,6 +345,7 @@ def build_mock_app(downloads_dir=None):
 
     cancel_event = threading.Event()
     thumbnail_manager = MagicMock()
+    thumbnail_manager.get.return_value = np.zeros((100, 100, 3), dtype=np.uint8)
     model_registry = MagicMock()
 
     app_instance = ui.app_ui.AppUI(config, logger, progress_queue, cancel_event, thumbnail_manager, model_registry)
