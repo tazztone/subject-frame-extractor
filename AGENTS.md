@@ -17,3 +17,4 @@
 - **UI Safety Contract**: Event methods in `app_ui.py` MUST be wrapped in `@AppUI.safe_ui_callback`.
 - **Unhashable Config**: NEVER use `@lru_cache` on functions taking `Config`.
 - **Test Coverage Constraint**: Running individual tests directly with pytest will fail the global coverage threshold check (`fail-under=80`). Run the full unit/integration suite, or append `--no-cov` (e.g. `pytest tests/unit/test_signatures.py --no-cov`) during isolated test runs.
+- **Thread-Safe Mocking**: NEVER invoke `unittest.mock.patch` inside spawned/background threads. Doing so is thread-unsafe, leaks mocks globally (e.g. `PIL.Image.open`), and causes flaky failures in parallel test suites (`pytest-xdist`). Apply patches in the main test thread instead.
