@@ -345,6 +345,30 @@ def test_session_load_event_validation(tmp_path: Path):
         SessionLoadEvent(session_path=str(file_path))
 
 
+def test_validate_session_path_direct(tmp_path: Path):
+    """Directly test the validate_session_path classmethod for SessionLoadEvent."""
+    import re
+
+    # Empty path
+    assert SessionLoadEvent.validate_session_path("") == ""
+
+    # Non-existent path
+    invalid_path = tmp_path / "invalid_path"
+    with pytest.raises(ValueError, match=f"Session path '{re.escape(str(invalid_path))}' does not exist."):
+        SessionLoadEvent.validate_session_path(str(invalid_path))
+
+    # Path is not a directory (it's a file)
+    file_path = tmp_path / "file.txt"
+    file_path.touch()
+    with pytest.raises(ValueError, match=f"Session path '{re.escape(str(file_path))}' is not a directory."):
+        SessionLoadEvent.validate_session_path(str(file_path))
+
+    # Valid path (directory)
+    valid_dir = tmp_path / "valid_session"
+    valid_dir.mkdir()
+    assert SessionLoadEvent.validate_session_path(str(valid_dir)) == str(valid_dir)
+
+
 def test_ui_event_extra_ignore():
     """Test that UIEvent ignores extra fields as configured."""
     event = UIEvent(extra_field="ignore me")
