@@ -295,6 +295,7 @@ def setup_logging(
             "sam3": {
                 "level": "WARNING",
                 "propagate": True,
+                "handlers": [],
             },
         },
     }
