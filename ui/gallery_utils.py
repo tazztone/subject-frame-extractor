@@ -49,7 +49,6 @@ def _update_gallery(
         A tuple containing the status text and a Gradio update object for the gallery.
     """
     # TODO: Add pagination support for large datasets (>1000 frames)
-    # TODO: Implement virtual scrolling with lazy image loading
     # TODO: Add gallery sorting options (by score, time, etc.)
     kept, rejected, counts, per_frame_reasons = apply_all_filters_vectorized(
         all_frames_data, filters or {}, config, thumbnail_manager, output_dir
@@ -74,8 +73,7 @@ def _update_gallery(
                 if gallery_view == "Rejected"
                 else ""
             )
-            thumb_rgb_np = thumbnail_manager.get(thumb_path)
-            if thumb_rgb_np is None:
+            if not thumb_path.exists():
                 continue
 
             use_overlay = show_overlay and i < MAX_OVERLAY_RENDER and not f_meta.get("mask_empty", True)
@@ -83,13 +81,14 @@ def _update_gallery(
                 mask_path = masks_dir / mask_name
                 mask_gray = _load_mask_cached(str(mask_path))
                 if mask_gray is not None:
-                    preview_images.append(
-                        (render_mask_overlay(thumb_rgb_np, mask_gray, float(overlay_alpha), logger=logger), caption)
-                    )
-                else:
-                    preview_images.append((thumb_rgb_np, caption))
-            else:
-                preview_images.append((thumb_rgb_np, caption))
+                    thumb_rgb_np = thumbnail_manager.get(thumb_path)
+                    if thumb_rgb_np is not None:
+                        preview_images.append(
+                            (render_mask_overlay(thumb_rgb_np, mask_gray, float(overlay_alpha), logger=logger), caption)
+                        )
+                        continue
+
+            preview_images.append((str(thumb_path), caption))
     return status_text, gr.update(value=preview_images, rows=1 if gallery_view == "Rejected Frames" else 2)
 
 

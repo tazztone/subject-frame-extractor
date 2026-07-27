@@ -11,8 +11,9 @@ class TestGalleryUtils:
 
     @patch("ui.gallery_utils.apply_all_filters_vectorized")
     @patch("ui.gallery_utils.render_mask_overlay")
+    @patch("pathlib.Path.exists", return_value=True)
     def test_update_gallery_kept(
-        self, mock_render, mock_apply, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger
+        self, mock_exists, mock_render, mock_apply, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger
     ):
         # Mock apply to return frames 1 and 2 kept
         kept = sample_frames_data[:2]
@@ -42,11 +43,13 @@ class TestGalleryUtils:
         assert f"Kept:** 2/{len(sample_frames_data)}" in status
         assert "Rejections:** low_quality: 1" in status
         assert len(update["value"]) == 2
-        mock_thumbnail_manager.get.assert_called()
+        # Without overlay requested, we shouldn't get the thumbnail image itself, only path
+        assert isinstance(update["value"][0][0], str)
 
     @patch("ui.gallery_utils.apply_all_filters_vectorized")
+    @patch("pathlib.Path.exists", return_value=True)
     def test_update_gallery_rejected(
-        self, mock_apply, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger
+        self, mock_exists, mock_apply, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger
     ):
         kept = sample_frames_data[:2]
         rejected = [sample_frames_data[2]]
