@@ -79,8 +79,9 @@ class FilteringHandler:
         require_face_match: bool,
         dedup_thresh: int,
         dedup_method_ui: str,
+        page: str,
         *slider_values: float,
-    ) -> tuple[str, Any]:
+    ) -> tuple[str, Any, Any, Any]:
         """
         Updates the results gallery when filters change.
         """
@@ -107,6 +108,12 @@ class FilteringHandler:
                         pass
 
         dedup_method = self.app._map_dedup_method(dedup_method_ui)
+
+        try:
+            page_num = int(page)
+        except (ValueError, TypeError):
+            page_num = 1
+
         result = on_filters_changed(
             FilterEvent(
                 all_frames_data=all_frames_data,
@@ -119,12 +126,14 @@ class FilteringHandler:
                 dedup_thresh=dedup_thresh,
                 slider_values=slider_values_dict,
                 dedup_method=dedup_method,
+                page=page_num,
+                page_size=self.config.filter_gallery_page_size if hasattr(self.config, 'filter_gallery_page_size') else 500,
             ),
             self.thumbnail_manager,
             self.config,
             self.logger,
         )
-        return result["filter_status_text"], result["results_gallery"]
+        return result["filter_status_text"], result["results_gallery"], result["filter_total_pages_label"], result["filter_page_number_input"]
 
     @safe_ui_callback("Reset Filters")
     def on_reset_filters(self, state: ApplicationState) -> tuple:

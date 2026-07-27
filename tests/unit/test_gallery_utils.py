@@ -28,7 +28,7 @@ class TestGalleryUtils:
         output_dir = "/tmp/out"
         gallery_view = "Kept Frames"
 
-        status, update = _update_gallery(
+        status, update, pages_label, page_input = _update_gallery(
             sample_frames_data,
             filters,
             output_dir,
@@ -56,7 +56,7 @@ class TestGalleryUtils:
         reasons = {"frame_03.png": ["low_quality"]}
         mock_apply.return_value = (kept, rejected, MagicMock(), reasons)
 
-        status, update = _update_gallery(
+        status, update, pages_label, page_input = _update_gallery(
             sample_frames_data, {}, "/tmp/out", "Rejected", False, 0.5, mock_thumbnail_manager, mock_config, mock_logger
         )
 
@@ -88,7 +88,7 @@ class TestGalleryUtils:
 
         mock_render.return_value = np.ones((100, 100, 3), dtype=np.uint8)
 
-        status, update = _update_gallery(
+        status, update, pages_label, page_input = _update_gallery(
             sample_frames_data, {}, "/tmp/out", "Kept", True, 0.5, mock_thumbnail_manager, mock_config, mock_logger
         )
 
@@ -101,7 +101,7 @@ class TestGalleryUtils:
     def test_on_filters_changed(
         self, mock_update, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger
     ):
-        mock_update.return_value = ("Status", "Update")
+        mock_update.return_value = ("Status", "Update", "Pages", "Page")
 
         event = FilterEvent(
             all_frames_data=sample_frames_data,
@@ -120,6 +120,8 @@ class TestGalleryUtils:
 
         assert res["filter_status_text"] == "Status"
         assert res["results_gallery"] == "Update"
+        assert res["filter_total_pages_label"] == "Pages"
+        assert res["filter_page_number_input"] == "Page"
 
         # Verify filters dict passed to _update_gallery
         call_args = mock_update.call_args

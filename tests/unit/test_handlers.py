@@ -143,7 +143,7 @@ class TestAppUIHandlers:
             print("MOCK:", mock_on_filters)
             print("ACTUAL IN MODULE:", sys.modules["ui.handlers.filtering_handler"].on_filters_changed)
             # Use a dictionary that behaves like the expected return
-            mock_on_filters.return_value = {"filter_status_text": "OK", "results_gallery": {"value": []}}
+            mock_on_filters.return_value = {"filter_status_text": "OK", "results_gallery": {"value": []}, "filter_total_pages_label": "Pages", "filter_page_number_input": "Page"}
 
             # Use a real path to pass FilterEvent validation
             out_dir = str(tmp_path / "analysis_out_handlers")
@@ -157,8 +157,8 @@ class TestAppUIHandlers:
                 "slider3": MagicMock(),
             }
 
-            status, gallery_update = app_ui.filtering_handler.on_filters_changed_wrapper(
-                state, "Kept", False, 0.6, False, 5, "pHash", *slider_vals
+            status, gallery_update, pages_label, page_input = app_ui.filtering_handler.on_filters_changed_wrapper(
+                state, "Kept", False, 0.6, False, 5, "pHash", "1", *slider_vals
             )
 
             assert str(status) == "OK"

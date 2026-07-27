@@ -238,6 +238,39 @@ class FilteringTabBuilder:
                         },
                     )
 
+                    with gr.Row(elem_classes="pagination-row"):
+                        with gr.Column(scale=1):
+                            pass
+                        with gr.Column(scale=3):
+                            with gr.Row():
+                                self.app._create_component(
+                                    "filter_prev_page_button",
+                                    "button",
+                                    {"value": "Previous", "size": "sm", "elem_id": "filter_prev_page_button"},
+                                )
+                                self.app._create_component(
+                                    "filter_page_number_input",
+                                    "dropdown",
+                                    {
+                                        "label": "Page",
+                                        "value": "1",
+                                        "choices": ["1"],
+                                        "interactive": True,
+                                        "container": False,
+                                        "show_label": False,
+                                        "scale": 0,
+                                        "min_width": 80,
+                                    },
+                                )
+                                self.app._create_component("filter_total_pages_label", "markdown", {"value": "/ 1 pages"})
+                                self.app._create_component(
+                                    "filter_next_page_button",
+                                    "button",
+                                    {"value": "Next", "size": "sm", "elem_id": "filter_next_page_button"},
+                                )
+                        with gr.Column(scale=1):
+                            pass
+
                 with gr.Group(visible=True, elem_id="export_group") as export_group:
                     self.app.components["export_group"] = export_group
                     gr.Markdown("#### 2. Finalize & Export Dataset")
