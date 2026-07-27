@@ -302,7 +302,6 @@ def _recompute_single_preview(
 ):
     """Re-runs the seeding process for a single scene and updates its preview image."""
     # TODO: Support async preview generation for faster UI response
-    # TODO: Add comparison view (before/after) for seed changes
     scene = scene_state.scene  # Use .scene property if using refactored SceneState
     out_dir = Path(masker.params.output_folder)
     best_frame_num = scene.best_frame or scene.start_frame
@@ -372,6 +371,22 @@ def _recompute_single_preview(
         if mask is not None
         else (masker.draw_bbox(thumb_rgb, bbox) if bbox is not None else thumb_rgb)
     )
+
+    if scene.preview_path:
+        old_preview = thumbnail_manager.get(scene.preview_path)
+        if old_preview is not None:
+            h, w = overlay_rgb.shape[:2]
+            if old_preview.shape[1] >= w * 2:
+                # If old preview is already a comparison, just take the right half
+                old_preview = old_preview[:, -w:]
+
+            # Ensure heights match if needed, though they should be identical
+            if old_preview.shape[:2] == (h, w):
+                comparison = np.zeros((h, w * 2, overlay_rgb.shape[2]), dtype=np.uint8)
+                comparison[:, :w] = old_preview
+                comparison[:, w:] = overlay_rgb
+                overlay_rgb = comparison
+
     previews_dir = out_dir / "previews"
     previews_dir.mkdir(parents=True, exist_ok=True)
 
