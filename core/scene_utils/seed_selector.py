@@ -385,11 +385,28 @@ class SeedSelector:
 
         # Bonus for high IoU between person and text boxes
         best_iou, best_pair = -1, None
-        for y_box in subject_boxes:
-            for d_box in text_boxes:
-                iou = self._calculate_iou(y_box["bbox"], d_box["bbox"])
-                if iou > best_iou:
-                    best_iou, best_pair = iou, (y_box, d_box)
+        if subject_boxes and text_boxes:
+            sub_bboxes = np.array([b["bbox"] for b in subject_boxes])
+            txt_bboxes = np.array([b["bbox"] for b in text_boxes])
+
+            inter_x1 = np.maximum(sub_bboxes[:, None, 0], txt_bboxes[None, :, 0])
+            inter_y1 = np.maximum(sub_bboxes[:, None, 1], txt_bboxes[None, :, 1])
+            inter_x2 = np.minimum(sub_bboxes[:, None, 2], txt_bboxes[None, :, 2])
+            inter_y2 = np.minimum(sub_bboxes[:, None, 3], txt_bboxes[None, :, 3])
+
+            inter_area = np.maximum(0, inter_x2 - inter_x1) * np.maximum(0, inter_y2 - inter_y1)
+
+            sub_area = (sub_bboxes[:, 2] - sub_bboxes[:, 0]) * (sub_bboxes[:, 3] - sub_bboxes[:, 1])
+            txt_area = (txt_bboxes[:, 2] - txt_bboxes[:, 0]) * (txt_bboxes[:, 3] - txt_bboxes[:, 1])
+
+            union_area = sub_area[:, None] + txt_area[None, :] - inter_area
+            iou_matrix = inter_area / (union_area + 1e-6)
+
+            max_idx = np.argmax(iou_matrix)
+            best_n, best_m = np.unravel_index(max_idx, iou_matrix.shape)
+            best_iou = float(iou_matrix[best_n, best_m])
+            best_pair = (subject_boxes[best_n], text_boxes[best_m])
+
         if best_iou > self.config.seeding_iou_threshold and best_pair is not None:
             for cand in scored_candidates:
                 if np.array_equal(cand["box"], best_pair[0]["bbox"]) or np.array_equal(
