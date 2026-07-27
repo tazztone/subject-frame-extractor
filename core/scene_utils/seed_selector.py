@@ -475,22 +475,30 @@ class SeedSelector:
             return weights["area"] * norm_area + weights["confidence"] * b["conf"] + weights["edge"] * norm_edge
 
         all_faces = None
+        face_data = None
         if is_person and strategy == "Best Face" and self.face_analyzer:
             all_faces = self.face_analyzer.get(cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
+            if all_faces:
+                face_data = [
+                    (f.bbox[0] + f.bbox[2] / 2, f.bbox[1] + f.bbox[3] / 2, f.det_score)
+                    for f in all_faces
+                ]
 
         def best_face_score(b):
-            if not all_faces:
+            if not face_data:
                 return 0.0
-            person_bbox = b["bbox"]
-            faces_in_box = []
-            for face in all_faces:
-                face_cx = face.bbox[0] + face.bbox[2] / 2
-                face_cy = face.bbox[1] + face.bbox[3] / 2
-                if person_bbox[0] <= face_cx < person_bbox[2] and person_bbox[1] <= face_cy < person_bbox[3]:
-                    faces_in_box.append(face)
-            if not faces_in_box:
-                return 0.0
-            return max(f.det_score for f in faces_in_box)
+
+            x1, y1, x2, y2 = b["bbox"]
+            max_score = 0.0
+            found = False
+
+            for cx, cy, score in face_data:
+                if x1 <= cx < x2 and y1 <= cy < y2:
+                    if score > max_score:
+                        max_score = score
+                    found = True
+
+            return max_score if found else 0.0
 
         def highest_conf_score(b):
             # Penalize very low confidence detections even if they are the "highest"
@@ -530,14 +538,14 @@ class SeedSelector:
                     all_faces = []
 
             if all_faces:
-                person_bbox = best_person["bbox"]
+                x1, y1, x2, y2 = best_person["bbox"]
                 best_face_sim_in_box = 0.0
                 for face in all_faces:
                     # Check if face center is inside person bbox
                     # InsightFace bbox is usually xyxy
                     face_cx = (face.bbox[0] + face.bbox[2]) / 2
                     face_cy = (face.bbox[1] + face.bbox[3]) / 2
-                    if person_bbox[0] <= face_cx <= person_bbox[2] and person_bbox[1] <= face_cy <= person_bbox[3]:
+                    if x1 <= face_cx <= x2 and y1 <= face_cy <= y2:
                         sim = np.dot(face.normed_embedding, self.reference_embedding)
                         if sim > best_face_sim_in_box:
                             best_face_sim_in_box = sim
