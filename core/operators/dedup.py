@@ -79,22 +79,20 @@ def apply_deduplication_filter(
     dedup_method = filters.get("dedup_method", "pHash")
     if filters.get("enable_dedup"):
         if dedup_method == "pHash" and imagehash and filters.get("dedup_thresh", -1) != -1:
-            sorted_indices = sorted(range(num_frames), key=lambda i: filenames[i])
             hashes = {
                 i: imagehash.hex_to_hash(all_frames_data[i]["phash"])
                 for i in range(num_frames)
                 if "phash" in all_frames_data[i]
             }
+            sorted_indices = sorted(hashes.keys(), key=lambda i: filenames[i])
             hash_size = next(iter(hashes.values())).hash.size if hashes else 64
             kept_hash_matrix, kept_indices, kept_count = (
-                np.zeros((num_frames, hash_size), dtype=bool),
-                np.zeros(num_frames, dtype=int),
+                np.zeros((len(hashes), hash_size), dtype=bool),
+                np.zeros(len(hashes), dtype=int),
                 0,
             )
             thresh = filters.get("dedup_thresh", 5)
             for i in sorted_indices:
-                if i not in hashes:
-                    continue
                 curr_hash = hashes[i].hash.flatten()
                 is_duplicate = False
                 if kept_count > 0:
@@ -140,23 +138,21 @@ def apply_deduplication_filter(
                 device="cuda" if torch.cuda.is_available() else "cpu",
             )
         elif dedup_method == "pHash then LPIPS" and thumbnail_manager and imagehash and output_dir:
-            sorted_indices = sorted(range(num_frames), key=lambda i: filenames[i])
             hashes = {
                 i: imagehash.hex_to_hash(all_frames_data[i]["phash"])
                 for i in range(num_frames)
                 if "phash" in all_frames_data[i]
             }
+            sorted_indices = sorted(hashes.keys(), key=lambda i: filenames[i])
             hash_size = next(iter(hashes.values())).hash.size if hashes else 64
             kept_hash_matrix, kept_indices, kept_count, p_hash_duplicates = (
-                np.zeros((num_frames, hash_size), dtype=bool),
-                np.zeros(num_frames, dtype=int),
+                np.zeros((len(hashes), hash_size), dtype=bool),
+                np.zeros(len(hashes), dtype=int),
                 0,
                 [],
             )
             thresh = filters.get("dedup_thresh", 5)
             for i in sorted_indices:
-                if i not in hashes:
-                    continue
                 curr_hash = hashes[i].hash.flatten()
                 is_duplicate = False
                 if kept_count > 0:
