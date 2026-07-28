@@ -425,10 +425,12 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_batch_manager.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_bug_fixes.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_cli.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_cli_args.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_cli_commands.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_cli_utils.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_concurrency.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_config.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_context.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_context_adherence.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_core.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_crop_operator.py  
@@ -467,6 +469,7 @@ For developer guidelines, see [AGENTS.md](../AGENTS.md).
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_models_property.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_niqe_operator.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_operators.py  
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_operators_base.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_operators_registry.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_phase1_logic.py  
 │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;test_phase2_logic.py  
@@ -1915,7 +1918,7 @@ def _load_mask_cached(mask_path: str) -> Optional[np.ndarray]:
     """Loads a mask from disk with LRU caching."""
 def clear_mask_cache():
     """Clears the mask LRU cache."""
-def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str, gallery_view: str, show_overlay: bool, overlay_alpha: float, thumbnail_manager: Any, config: Any, logger: Any) -> tuple[str, Any]:
+def _update_gallery(all_frames_data: list[dict], filters: dict, output_dir: str, gallery_view: str, show_overlay: bool, overlay_alpha: float, thumbnail_manager: Any, config: Any, logger: Any, page: int=1, page_size: int=500) -> tuple[str, Any, Any, Any]:
     """Updates the Gradio gallery based on applied filters."""
 def on_filters_changed(event: FilterEvent, thumbnail_manager: Any, config: Any, logger: Any) -> dict:
     """Event handler for when filter settings are modified."""
@@ -1940,7 +1943,7 @@ class FilteringHandler:
     def on_preset_changed(self, preset_name: str) -> list[Any]:
         """Updates filter sliders when a preset is selected."""
     @safe_ui_callback('Filter Change')
-    def on_filters_changed_wrapper(self, state: ApplicationState, gallery_view: str, show_overlay: bool, overlay_alpha: float, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, *slider_values: float) -> tuple[str, Any]:
+    def on_filters_changed_wrapper(self, state: ApplicationState, gallery_view: str, show_overlay: bool, overlay_alpha: float, require_face_match: bool, dedup_thresh: int, dedup_method_ui: str, page: str, *slider_values: float) -> tuple[str, Any, Any, Any]:
         """Updates the results gallery when filters change."""
     @safe_ui_callback('Reset Filters')
     def on_reset_filters(self, state: ApplicationState) -> tuple:

@@ -91,10 +91,12 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_batch_manager.py`](#-testsunittest_batch_managerpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_bug_fixes.py`](#-testsunittest_bug_fixespy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_cli.py`](#-testsunittest_clipy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_cli_args.py`](#-testsunittest_cli_argspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_cli_commands.py`](#-testsunittest_cli_commandspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_cli_utils.py`](#-testsunittest_cli_utilspy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_concurrency.py`](#-testsunittest_concurrencypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_config.py`](#-testsunittest_configpy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_context.py`](#-testsunittest_contextpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_context_adherence.py`](#-testsunittest_context_adherencepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_core.py`](#-testsunittest_corepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_crop_operator.py`](#-testsunittest_crop_operatorpy)  
@@ -133,6 +135,7 @@ tests
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_models_property.py`](#-testsunittest_models_propertypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_niqe_operator.py`](#-testsunittest_niqe_operatorpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_operators.py`](#-testsunittest_operatorspy)  
+&nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_operators_base.py`](#-testsunittest_operators_basepy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_operators_registry.py`](#-testsunittest_operators_registrypy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_phase1_logic.py`](#-testsunittest_phase1_logicpy)  
 &nbsp;&nbsp;&nbsp;&nbsp;├──&nbsp;[`test_phase2_logic.py`](#-testsunittest_phase2_logicpy)  
@@ -386,6 +389,7 @@ class TestCUDAAvailability:
         """Verify sufficient GPU memory (~4GB needed)."""
 @pytest.mark.gpu_e2e
 @pytest.mark.sam3
+@pytest.mark.xdist_group('sam3_isolated')
 class TestSAM3Inference:
     """Real SAM3 inference tests - catches BFloat16 and other runtime errors."""
     @requires_sam3
@@ -422,6 +426,7 @@ class TestPipelineE2E:
     def test_analysis_pipeline_initializes_with_real_managers(self, tmp_path, module_model_registry):
         """AnalysisPipeline initializes with real ThumbnailManager and ModelRegistry."""
 @pytest.mark.gpu_e2e
+@pytest.mark.xdist_group('sam3_isolated')
 class TestVideoE2E:
     """End-to-end tests with real video processing."""
     @pytest.fixture
@@ -455,6 +460,7 @@ class TestExportE2E:
     def test_export_dry_run_mode(self, tmp_path):
         """Dry run export mode works without creating files."""
 @pytest.mark.gpu_e2e
+@pytest.mark.xdist_group('sam3_isolated')
 class TestCancellationE2E:
     """E2E tests for cancel operations during pipeline execution."""
     @requires_sam3
@@ -470,6 +476,7 @@ class TestMediaPipeLandmarkerE2E:
     def test_face_landmarker_model_download(self, tmp_path):
         """Face landmarker model can be downloaded."""
 @pytest.mark.gpu_e2e
+@pytest.mark.xdist_group('sam3_isolated')
 class TestLargeVideoE2E:
     """E2E tests for handling larger videos/frame sequences."""
     def test_many_frames_processing(self, tmp_path):
@@ -479,6 +486,7 @@ class TestLargeVideoE2E:
     def test_sam3_with_many_frames(self, tmp_path, sample_video, module_model_registry):
         """SAM3 can process a larger sequence."""
 @pytest.mark.gpu_e2e
+@pytest.mark.xdist_group('sam3_isolated')
 class TestMaskGenerationE2E:
     """E2E tests for mask generation to catch silent failures."""
     @requires_sam3
@@ -1401,6 +1409,24 @@ def test_filter_command_args(mock_run_filter, runner, tmp_path): ...
 def test_cli_group_exists(runner): ...
 ```
 
+### `📄 tests/unit/test_cli_args.py`
+
+```python
+@pytest.fixture
+def runner(): ...
+@patch('core.cli_args.run_extract')
+def test_extract_command(mock_run, runner, tmp_path): ...
+@patch('core.cli_args.run_analyze')
+def test_analyze_command(mock_run, runner, tmp_path): ...
+@patch('core.cli_args.run_full')
+def test_full_command(mock_run, runner, tmp_path): ...
+@patch('core.cli_args.run_status')
+def test_status_command(mock_run, runner, tmp_path): ...
+@patch('core.cli_args.run_filter')
+def test_filter_command(mock_run, runner, tmp_path): ...
+def test_cli_group_exists(runner): ...
+```
+
 ### `📄 tests/unit/test_cli_commands.py`
 
 ```python
@@ -1489,6 +1515,13 @@ def test_json_config_settings_source_file_not_found():
     """Test JSON config source when file does not exist."""
 def test_json_config_settings_source_json_error():
     """Test JSON config source when JSON is invalid."""
+```
+
+### `📄 tests/unit/test_context.py`
+
+```python
+def test_analysis_context_initialization_without_progress(): ...
+def test_analysis_context_initialization_with_progress(): ...
 ```
 
 ### `📄 tests/unit/test_context_adherence.py`
@@ -1745,6 +1778,8 @@ def test_export_event_validate_out():
     """Test ExportEvent validate_out method directly."""
 def test_session_load_event_validation(tmp_path: Path):
     """Test SessionLoadEvent validation."""
+def test_validate_session_path_direct(tmp_path: Path):
+    """Directly test the validate_session_path classmethod for SessionLoadEvent."""
 def test_ui_event_extra_ignore():
     """Test that UIEvent ignores extra fields as configured."""
 def test_validate_face_ref():
@@ -1752,6 +1787,8 @@ def test_validate_face_ref():
 @patch('core.events.validate_writable_directory')
 def test_validate_out_methods(mock_validate):
     """Test that validate_out classmethods correctly delegate to validate_writable_d..."""
+def test_extraction_event_validate_source():
+    """Test the validate_source method of ExtractionEvent directly to achieve full b..."""
 ```
 
 ### `📄 tests/unit/test_export.py`
@@ -2028,9 +2065,11 @@ def test_strategy_routing_with_enum():
 class TestGalleryUtils:
     @patch('ui.gallery_utils.apply_all_filters_vectorized')
     @patch('ui.gallery_utils.render_mask_overlay')
-    def test_update_gallery_kept(self, mock_render, mock_apply, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger): ...
+    @patch('pathlib.Path.exists', return_value=True)
+    def test_update_gallery_kept(self, mock_exists, mock_render, mock_apply, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger): ...
     @patch('ui.gallery_utils.apply_all_filters_vectorized')
-    def test_update_gallery_rejected(self, mock_apply, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger): ...
+    @patch('pathlib.Path.exists', return_value=True)
+    def test_update_gallery_rejected(self, mock_exists, mock_apply, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger): ...
     @patch('ui.gallery_utils.apply_all_filters_vectorized')
     @patch('cv2.imread')
     @patch('ui.gallery_utils.render_mask_overlay')
@@ -2503,6 +2542,21 @@ def test_face_pose_operator_basic(mock_config, sample_image, mock_logger):
     """Test FacePoseOperator with mock transformation matrix."""
 def test_dedup_phash_basic(mock_config, mock_logger):
     """Test pHash deduplication filter logic."""
+```
+
+### `📄 tests/unit/test_operators_base.py`
+
+```python
+def test_operator_config_defaults(): ...
+def test_operator_config_custom(): ...
+def test_operator_context_defaults(): ...
+def test_operator_context_custom(): ...
+def test_operator_result_defaults(): ...
+def test_operator_result_with_error(): ...
+def test_operator_result_custom(): ...
+def test_filter_definition_defaults(): ...
+def test_filter_definition_custom(): ...
+def test_operator_protocol(): ...
 ```
 
 ### `📄 tests/unit/test_operators_registry.py`

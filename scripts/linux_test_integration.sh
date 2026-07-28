@@ -21,6 +21,7 @@ export LD_LIBRARY_PATH="$NVIDIA_LIBS:$LD_LIBRARY_PATH"
 
 # Export integration mode so global mocks are disabled
 export PYTEST_INTEGRATION_MODE=true
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # Integration tests are heavy and should run serially or with -n 1
 uv run --no-sync pytest tests/integration/ -o "addopts=-v --tb=short" -m "integration or gpu_e2e" --no-cov "$@"

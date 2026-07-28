@@ -496,10 +496,7 @@ class SeedSelector:
         if is_person and strategy == "Best Face" and self.face_analyzer:
             all_faces = self.face_analyzer.get(cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
             if all_faces:
-                face_data = [
-                    (f.bbox[0] + f.bbox[2] / 2, f.bbox[1] + f.bbox[3] / 2, f.det_score)
-                    for f in all_faces
-                ]
+                face_data = [(f.bbox[0] + f.bbox[2] / 2, f.bbox[1] + f.bbox[3] / 2, f.det_score) for f in all_faces]
 
         def best_face_score(b):
             if not face_data:
@@ -682,9 +679,10 @@ class SeedSelector:
         try:
             # Use TemporaryDirectory for automatic cleanup
             with tempfile.TemporaryDirectory() as temp_dir:
-                # Save frame to temp directory for tracker init_state
+                # Save frame copies to temp directory for tracker init_state
                 pil_img = rgb_to_pil(frame_rgb_small)
-                pil_img.save(os.path.join(temp_dir, "00000.jpg"))
+                for i in range(40):
+                    pil_img.save(os.path.join(temp_dir, f"{i:05d}.jpg"))
 
                 # Use tracker API
                 h, w = frame_rgb_small.shape[:2]

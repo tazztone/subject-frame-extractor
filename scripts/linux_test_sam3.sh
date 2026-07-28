@@ -17,7 +17,7 @@ echo "----------------------------------------"
 
 # SAM3 currently mostly has integration/E2E tests in tests/integration/
 # and some generic logic in tests/unit/ marked with -m sam3
-PYTEST_INTEGRATION_MODE=true uv run --no-sync pytest -m sam3 --no-cov "$@"
+PYTEST_INTEGRATION_MODE=true PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True uv run --no-sync pytest -m sam3 --no-cov "$@"
 
 if [ $? -ne 0 ]; then
     echo ""

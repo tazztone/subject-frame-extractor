@@ -129,20 +129,21 @@ class SAM3Wrapper:
         w, h = img_size
         x, y, bw, bh = bbox_xywh
 
-        # Normalize and convert to [top-left, bottom-right] — the format add_tracker_new_points expects
-        points = [
-            [max(0.0, min(1.0, x / w)), max(0.0, min(1.0, y / h))],
-            [max(0.0, min(1.0, (x + bw) / w)), max(0.0, min(1.0, (y + bh) / h))],
+        # Normalize bbox to [x, y, bw, bh] in [0, 1] range expected by SAM3
+        norm_box = [
+            max(0.0, min(1.0, x / w)),
+            max(0.0, min(1.0, y / h)),
+            max(0.0, min(1.0, bw / w)),
+            max(0.0, min(1.0, bh / h)),
         ]
-        point_labels = [2, 3]
 
         req = dict(
             type="add_prompt",
             session_id=self.session_id,
             frame_index=frame_idx,
             obj_id=obj_id,
-            points=points,
-            point_labels=point_labels,
+            bounding_boxes=[norm_box],
+            bounding_box_labels=[1],
         )
         if text:
             req["text"] = text
@@ -210,15 +211,16 @@ class SAM3Wrapper:
         if not self.session_id:
             raise RuntimeError("init_video must be called before propagation")
         direction = "backward" if reverse else "forward"
-        for resp in self.predictor.handle_stream_request(
-            dict(
-                type="propagate_in_video",
-                session_id=self.session_id,
-                start_frame_index=start_idx,
-                max_frame_num_to_track=max_frames or 9999,
-                propagation_direction=direction,
-            )
-        ):
+        req = dict(
+            type="propagate_in_video",
+            session_id=self.session_id,
+            start_frame_index=start_idx,
+            propagation_direction=direction,
+        )
+        if max_frames is not None:
+            req["max_frame_num_to_track"] = max_frames
+
+        for resp in self.predictor.handle_stream_request(req):
             frame_idx = resp.get("frame_index")
             out = resp.get("outputs", {})
             masks, ids = out.get("out_binary_masks"), out.get("out_obj_ids")
@@ -277,6 +279,8 @@ class SAM3Wrapper:
             except Exception:
                 pass
             self.session_id = None
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def shutdown(self):
         import gc
