@@ -1018,8 +1018,45 @@ class AppUI:
             c["require_face_match_input"],
             c["dedup_thresh_input"],
             c["dedup_method_input"],
+            c["filter_page_number_input"],
         ] + slider_comps
-        fast_filter_outputs = [c["filter_status_text"], c["results_gallery"]]
+        fast_filter_outputs = [c["filter_status_text"], c["results_gallery"], c["filter_total_pages_label"], c["filter_page_number_input"]]
+
+        def on_filter_next_page(state, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, current_page, *slider_values):
+            try:
+                page = int(current_page) + 1
+            except Exception:
+                page = 1
+            return self.filtering_handler.on_filters_changed_wrapper(state, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, str(page), *slider_values)
+
+        def on_filter_prev_page(state, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, current_page, *slider_values):
+            try:
+                page = max(1, int(current_page) - 1)
+            except Exception:
+                page = 1
+            return self.filtering_handler.on_filters_changed_wrapper(state, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, str(page), *slider_values)
+
+        c["filter_next_page_button"].click(
+            on_filter_next_page,
+            fast_filter_inputs,
+            fast_filter_outputs
+        )
+
+        c["filter_prev_page_button"].click(
+            on_filter_prev_page,
+            fast_filter_inputs,
+            fast_filter_outputs
+        )
+
+        def on_filter_page_change(state, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, current_page, *slider_values):
+            return self.filtering_handler.on_filters_changed_wrapper(state, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, current_page, *slider_values)
+
+        c["filter_page_number_input"].change(
+            on_filter_page_change,
+            fast_filter_inputs,
+            fast_filter_outputs
+        )
+
 
         c["smart_filter_checkbox"].change(
             lambda state, e: (
@@ -1053,6 +1090,8 @@ class AppUI:
                 c["application_state"],
                 c["filter_status_text"],
                 c["results_gallery"],
+                c.get("filter_total_pages_label"),
+                c.get("filter_page_number_input"),
                 c["results_group"],
                 c["export_group"],
                 c["export_button"],
@@ -1112,6 +1151,8 @@ class AppUI:
                 {
                     c["filter_status_text"]: filter_updates["filter_status_text"],
                     c["results_gallery"]: filter_updates["results_gallery"],
+                    c.get("filter_total_pages_label"): filter_updates.get("filter_total_pages_label", gr.update()),
+                    c.get("filter_page_number_input"): filter_updates.get("filter_page_number_input", gr.update()),
                 }
             )
             return [updates.get(comp, gr.update()) for comp in load_outputs]
@@ -1170,7 +1211,8 @@ class AppUI:
                 c["dedup_method_input"],
             ]
             + list(c["metric_accs"].values())
-            + [c["smart_filter_checkbox"]],
+            + [c["smart_filter_checkbox"]]
+            + [c["filter_total_pages_label"], c["filter_page_number_input"]],
         )
 
         # Auto Threshold

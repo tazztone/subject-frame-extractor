@@ -180,6 +180,8 @@ class FilterEvent(UIEvent):
     dedup_thresh: int = Field(ge=-1, le=100)
     slider_values: Dict[str, float]
     dedup_method: str
+    page: int = 1
+    page_size: int = 500
 
     @field_validator("output_dir")
     @classmethod
