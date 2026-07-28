@@ -392,11 +392,6 @@ class AppUI:
             "dataframe": gr.Dataframe,
         }
 
-        # UX Enforcement: Add defaults for better consistency
-        if comp_type == "button" and "variant" not in kwargs:
-            # Default secondary unless specified
-            pass
-
         # Auto-assign elem_id if not provided
         if "elem_id" not in kwargs:
             kwargs["elem_id"] = name
