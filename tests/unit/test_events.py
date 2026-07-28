@@ -435,3 +435,38 @@ def test_validate_out_methods(mock_validate):
     result = ExportEvent.validate_out("export/path")
     mock_validate.assert_called_with("export/path", "Output Directory")
     assert result == "/mock/path"
+
+
+def test_extraction_event_validate_source():
+    """Test the validate_source method of ExtractionEvent directly to achieve full branch coverage."""
+    # Test valid case: source_path is present
+    event_valid_source = ExtractionEvent.model_construct(
+        source_path="video.mp4",
+        upload_video=None
+    )
+    result_source = ExtractionEvent.validate_source(event_valid_source)
+    assert result_source == event_valid_source
+
+    # Test valid case: upload_video is present
+    event_valid_upload = ExtractionEvent.model_construct(
+        source_path="",
+        upload_video="uploaded_video.mp4"
+    )
+    result_upload = ExtractionEvent.validate_source(event_valid_upload)
+    assert result_upload == event_valid_upload
+
+    # Test valid case: both are present
+    event_valid_both = ExtractionEvent.model_construct(
+        source_path="video.mp4",
+        upload_video="uploaded_video.mp4"
+    )
+    result_both = ExtractionEvent.validate_source(event_valid_both)
+    assert result_both == event_valid_both
+
+    # Test invalid case: neither is present
+    event_invalid = ExtractionEvent.model_construct(
+        source_path="",
+        upload_video=None
+    )
+    with pytest.raises(ValueError, match="Please provide a Source Path or Upload a Video."):
+        ExtractionEvent.validate_source(event_invalid)
