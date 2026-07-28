@@ -547,7 +547,10 @@ class SubjectMasker:
 
         for candidate, score in candidates_with_scores:
             frame_num = candidate[0]
-            if all(abs(frame_num - existing_fn) >= min_dist for existing_fn in best_seeds):
+            for existing_fn in best_seeds:
+                if abs(frame_num - existing_fn) < min_dist:
+                    break
+            else:
                 best_seeds.append(frame_num)
                 if len(best_seeds) >= 3:
                     break
