@@ -128,9 +128,22 @@ def _apply_metric_filters(
             if hasattr(def_min, "tolist"):
                 def_min = def_min.tolist()
             nan_fill = def_min if def_min != -np.inf else 0.0
-            mask &= (np.nan_to_num(arr, nan=float(nan_fill)) >= float(min_v)) & (
-                np.nan_to_num(arr, nan=float(nan_fill)) <= float(max_v)
-            )
+
+            filled_arr = np.nan_to_num(arr, nan=float(nan_fill))
+            mask &= (filled_arr >= float(min_v)) & (filled_arr <= float(max_v))
+
+            not_nan_mask = ~np.isnan(arr)
+            fail_low_mask = not_nan_mask & (filled_arr < float(min_v))
+            fail_high_mask = not_nan_mask & (filled_arr > float(max_v))
+
+            reason_low = d.reason_range or d.reason_low or f"{k}_low"
+            for i in np.where(fail_low_mask)[0]:
+                reasons[filenames[i]].append(reason_low)
+
+            reason_high = d.reason_range or d.reason_high or f"{k}_high"
+            for i in np.where(fail_high_mask)[0]:
+                reasons[filenames[i]].append(reason_high)
+
         elif t == "min":
             min_v = filters.get(f"{k}_min", defaults.get("default_min", d.default_min))
             if hasattr(min_v, "tolist"):
@@ -146,34 +159,27 @@ def _apply_metric_filters(
                 if filters.get("require_face_match"):
                     m &= has
                 mask &= m
+
+                filled_arr = np.nan_to_num(arr, nan=float(nan_fill))
+                fail_low_mask = has & (filled_arr < float(min_v))
+                reason_low = d.reason_low or f"{k}_low"
+                for i in np.where(fail_low_mask)[0]:
+                    reasons[filenames[i]].append(reason_low)
+
+                if filters.get("require_face_match"):
+                    fail_missing_mask = ~has
+                    reason_missing = d.reason_missing or "face_missing"
+                    for i in np.where(fail_missing_mask)[0]:
+                        reasons[filenames[i]].append(reason_missing)
             else:
-                mask &= np.nan_to_num(arr, nan=float(nan_fill)) >= float(min_v)
-    for i in np.where(~mask)[0]:
-        for d in defs:
-            k, t = d.key, d.filter_type
-            arr = metric_arrays.get(k)
-            if arr is None:
-                continue
-            v = arr[i]
-            if d.enabled_key and not filters.get(d.enabled_key):
-                continue
-            defaults = getattr(config, f"filter_default_{k}", {})
-            if t == "range":
-                min_v, max_v = (
-                    filters.get(f"{k}_min", defaults.get("default_min", d.default_min)),
-                    filters.get(f"{k}_max", defaults.get("default_max", d.default_max)),
-                )
-                if not np.isnan(v):
-                    if v < min_v:
-                        reasons[filenames[i]].append(d.reason_range or d.reason_low or f"{k}_low")
-                    if v > max_v:
-                        reasons[filenames[i]].append(d.reason_range or d.reason_high or f"{k}_high")
-            elif t == "min":
-                min_v = filters.get(f"{k}_min", defaults.get("default_min", d.default_min))
-                if not np.isnan(v) and v < min_v:
-                    reasons[filenames[i]].append(d.reason_low or f"{k}_low")
-                elif k == "face_sim" and filters.get("require_face_match") and np.isnan(v):
-                    reasons[filenames[i]].append(d.reason_missing or "face_missing")
+                filled_arr = np.nan_to_num(arr, nan=float(nan_fill))
+                mask &= (filled_arr >= float(min_v))
+
+                not_nan_mask = ~np.isnan(arr)
+                fail_low_mask = not_nan_mask & (filled_arr < float(min_v))
+                reason_low = d.reason_low or f"{k}_low"
+                for i in np.where(fail_low_mask)[0]:
+                    reasons[filenames[i]].append(reason_low)
     return mask, reasons
 
 
