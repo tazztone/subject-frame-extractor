@@ -246,6 +246,18 @@ During the mock consolidation and refactoring, several significant technical roa
    - **Problem:** If a production module contains fallback logic (e.g., `try: import matplotlib; except ImportError:` to enable/disable visualization features), a global mock will prevent the `ImportError` from triggering.
    - **Resolution:** Tests verifying missing-dependency fallbacks must temporarily un-mock or override the local references within the target module during the test execution, then restore them in a clean tear-down block.
 
+5. **SAM3 BBox Prompt Normalization & Label Alignment**
+   - **Problem:** SAM3 multiplex tracking `add_prompt` failed when passed pixel coordinates or corner points `[2, 3]`.
+   - **Resolution:** BBoxes passed to SAM3 must be normalized in `[0.0, 1.0]` relative coordinates (`[x/w, y/h, bw/w, bh/h]`) accompanied by `bounding_box_labels=[1]`.
+
+6. **SAM3 Video Initialization Frame Buffer Depth**
+   - **Problem:** Single-frame SAM3 seed mask generation attempts failed during session initialization.
+   - **Resolution:** SAM3 video context requires a multi-frame buffer (e.g., 40 frames) in temporary directories for proper tracker initialization.
+
+7. **PyTorch VRAM Allocation & Concurrency Isolation**
+   - **Problem:** Multi-frame SAM3 video tracking accumulates vision features in `inference_state`, causing CUDA OutOfMemory errors when running tests concurrently across `pytest-xdist` workers.
+   - **Resolution:** Set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` in test scripts, empty CUDA cache on session reset (`torch.cuda.empty_cache()`), and decorate SAM3 E2E test classes with `@pytest.mark.xdist_group("sam3_isolated")`.
+
 ---
 
 ## Appendix: GPU Accuracy Metrics
