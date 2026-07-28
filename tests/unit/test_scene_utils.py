@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from core.models import Scene
-from core.scene_utils import MaskPropagator, SeedSelector, SubjectMasker
+from core.scene_utils import SeedSelector, SubjectMasker
 
 
 # Helper to create a tensor mock that supports comparison operations
@@ -136,40 +136,6 @@ class TestSeedSelector:
         with patch("torch.cuda.OutOfMemoryError", RuntimeError):
             mask = selector._get_mask_for_bbox(frame_rgb, bbox)
             assert mask is None
-
-
-class TestMaskPropagator:
-    @patch("core.scene_utils.mask_propagator.postprocess_mask", side_effect=lambda x, **k: x)
-    def test_propagate_success(self, mock_post, mock_config_simple, mock_logger, mock_params):
-        tracker = MagicMock()
-        tracker.init_video.return_value = None
-        tracker.add_bbox_prompt.return_value = np.ones((100, 100), dtype=bool)
-        tracker.propagate.return_value = []
-
-        propagator = MaskPropagator(mock_params, tracker, threading.Event(), Queue(), mock_config_simple, mock_logger)
-        frames = [np.zeros((100, 100, 3), dtype=np.uint8)]
-        masks, areas, empties, errors = propagator.propagate(frames, 0, [0, 0, 10, 10])
-
-        assert len(masks) == 1
-        assert masks[0] is not None
-
-    def test_propagate_cancel(self, mock_config_simple, mock_logger, mock_params):
-        tracker = MagicMock()
-        cancel_event = threading.Event()
-        cancel_event.set()
-
-        # Mock tracker methods so it doesn't fail before checking cancel
-        tracker.init_video.return_value = None
-        tracker.add_bbox_prompt.return_value = np.ones((100, 100), dtype=bool)
-
-        propagator = MaskPropagator(mock_params, tracker, cancel_event, Queue(), mock_config_simple, mock_logger)
-        frames = [np.zeros((100, 100, 3), dtype=np.uint8)]
-
-        # Mock postprocess_mask to avoid TypeError
-        with patch("core.scene_utils.mask_propagator.postprocess_mask", side_effect=lambda x, **k: x):
-            res = propagator.propagate(frames, 0, [0, 0, 10, 10])
-            assert res is not None
-            assert len(res[0]) == 1  # masks
 
 
 class TestSubjectMasker:

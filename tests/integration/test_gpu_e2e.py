@@ -641,125 +641,13 @@ class TestVideoE2E:
             device="cuda",
         )
 
-        assert masker is not None
+        masker.initialize_models()
+        assert masker.dam_tracker is not None
 
 
 @pytest.mark.gpu_e2e
 class TestMaskPropagatorE2E:
     """Tests for MaskPropagator with real SAM3 inference."""
-
-    @requires_sam3
-    def test_mask_propagator_propagate(self, tmp_path, module_model_registry):
-        """MaskPropagator.propagate() works with new SAM3 API."""
-        import threading
-        from queue import Queue
-
-        import torch
-
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
-
-        from core.config import Config
-        from core.logger import AppLogger
-        from core.models import AnalysisParameters
-        from core.scene_utils.mask_propagator import MaskPropagator
-
-        config = Config(logs_dir=str(tmp_path / "logs"))
-        logger = AppLogger(config, log_to_console=False, log_to_file=False)
-
-        params = AnalysisParameters(source_path="test.mp4", output_folder=str(tmp_path), min_mask_area_pct=0.01)
-
-        wrapper = module_model_registry.get_tracker("sam3")
-
-        try:
-            propagator = MaskPropagator(
-                params=params,
-                dam_tracker=wrapper,
-                cancel_event=threading.Event(),
-                progress_queue=Queue(),
-                config=config,
-                logger=logger,
-                device="cuda",
-            )
-
-            # Create test frames
-            frames_rgb = [_create_test_image() for _ in range(5)]
-
-            # Run propagation
-            masks, areas, empties, errors = propagator.propagate(
-                shot_frames_rgb=frames_rgb, seed_idx=0, bbox_xywh=[50, 50, 80, 150]
-            )
-
-            assert len(masks) == 5
-            assert len(areas) == 5
-            assert len(empties) == 5
-            assert len(errors) == 5
-
-            # At least seed frame should have a mask
-            assert masks[0] is not None
-            assert isinstance(masks[0], np.ndarray)
-        finally:
-            # Note: We don't shutdown here as it's a shared registry tracker
-            wrapper.reset_session()
-
-    @requires_sam3
-    def test_mask_propagator_bidirectional(self, tmp_path, module_model_registry):
-        """MaskPropagator.propagate() works bidirectionally from middle frame."""
-        import threading
-        from queue import Queue
-
-        import torch
-
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
-
-        from core.config import Config
-        from core.logger import AppLogger
-        from core.models import AnalysisParameters
-        from core.scene_utils.mask_propagator import MaskPropagator
-
-        config = Config(logs_dir=str(tmp_path / "logs"))
-        logger = AppLogger(config, log_to_console=False, log_to_file=False)
-
-        params = AnalysisParameters(source_path="test.mp4", output_folder=str(tmp_path), min_mask_area_pct=0.01)
-
-        wrapper = module_model_registry.get_tracker("sam3")
-
-        try:
-            propagator = MaskPropagator(
-                params=params,
-                dam_tracker=wrapper,
-                cancel_event=threading.Event(),
-                progress_queue=Queue(),
-                config=config,
-                logger=logger,
-                device="cuda",
-            )
-
-            # Create 10 test frames with moving object
-            frames_rgb = []
-            for i in range(10):
-                img = np.zeros((256, 256, 3), dtype=np.uint8)
-                img[:, :] = [100, 150, 200]
-                x = 30 + i * 15
-                img[50:200, x : x + 80] = [200, 100, 100]
-                frames_rgb.append(img)
-
-            # Start from middle frame
-            seed_idx = 5
-            x_at_seed = 30 + seed_idx * 15
-
-            masks, areas, empties, errors = propagator.propagate(
-                shot_frames_rgb=frames_rgb, seed_idx=seed_idx, bbox_xywh=[x_at_seed, 50, 80, 150]
-            )
-
-            assert len(masks) == 10
-            # All frames should have masks (either from forward or backward propagation)
-            for i, mask in enumerate(masks):
-                assert mask is not None, f"Frame {i} has no mask"
-                assert isinstance(mask, np.ndarray)
-        finally:
-            wrapper.reset_session()
 
 
 @pytest.mark.gpu_e2e
@@ -924,7 +812,7 @@ class TestCancellationE2E:
     """E2E tests for cancel operations during pipeline execution."""
 
     @requires_sam3
-    def test_propagation_with_cancel_event(self, tmp_path, test_frames_dir, module_model_registry):
+    def test_propagation_with_cancel_event(self, tmp_path, sample_video, module_model_registry):
         """MaskPropagator handles cancel event during propagation."""
         import threading
         from queue import Queue
@@ -939,10 +827,12 @@ class TestCancellationE2E:
         from core.models import AnalysisParameters
         from core.scene_utils.mask_propagator import MaskPropagator
 
+        video_path, bbox = sample_video
+
         config = Config(logs_dir=str(tmp_path / "logs"))
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
 
-        params = AnalysisParameters(source_path="test.mp4", output_folder=str(tmp_path), min_mask_area_pct=0.01)
+        params = AnalysisParameters(source_path=str(video_path), output_folder=str(tmp_path), min_mask_area_pct=0.01)
 
         # Use shared tracker
         wrapper = module_model_registry.get_tracker("sam3")
@@ -960,9 +850,6 @@ class TestCancellationE2E:
                 device="cuda",
             )
 
-            # Create test frames
-            frames_rgb = [_create_test_image() for _ in range(10)]
-
             # Set cancel event after a short delay to simulate user cancellation
             def cancel_after_delay():
                 import time
@@ -975,18 +862,26 @@ class TestCancellationE2E:
             cancel_thread.start()
 
             # Run propagation (may be interrupted)
-            masks, areas, empties, errors = propagator.propagate(
-                shot_frames_rgb=frames_rgb, seed_idx=0, bbox_xywh=[50, 50, 80, 150]
+            frame_numbers = list(range(10))
+            frame_map = {i: f"frame_{i:06d}.png" for i in frame_numbers}
+            prompts = [{"frame": 0, "bbox": bbox, "obj_id": 1}]
+
+            masks, areas, empties, errors = propagator.propagate_video(
+                video_path=str(video_path),
+                frame_numbers=frame_numbers,
+                prompts=prompts,
+                frame_size=(1280, 720),
+                frame_map=frame_map,
             )
 
             cancel_thread.join()
 
-            # Should return lists (possibly incomplete due to cancel)
-            assert isinstance(masks, list)
-            assert isinstance(areas, list)
+            # Should return dicts (possibly incomplete due to cancel)
+            assert isinstance(masks, dict)
+            assert isinstance(areas, dict)
 
         finally:
-            pass  # cleanup() removed
+            wrapper.reset_session()
 
     def test_analysis_pipeline_cancel(self, tmp_path, module_model_registry):
         """AnalysisPipeline handles cancel event gracefully."""
@@ -1121,9 +1016,8 @@ class TestMaskGenerationE2E:
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
         wrapper = module_model_registry.get_tracker("sam3")
 
-        # Create a test frame
-        frame = np.zeros((720, 1280, 3), dtype=np.uint8)
-        frame[200:500, 400:800] = [200, 100, 100]  # Foreground object
+        # Create a textured high-entropy test frame
+        frame = _create_test_image(1280, 720)
 
         selector = SeedSelector(
             params=AnalysisParameters(source_path="test.mp4"),
@@ -1145,7 +1039,8 @@ class TestMaskGenerationE2E:
             cv2.imwrite(str(dummy_frame_path), frame)
             wrapper.init_video(str(dummy_frame_path))
 
-            mask = selector._get_mask_for_bbox(frame, [400, 200, 400, 300])
+            # BBox coordinates of the subject generated by _create_test_image(1280, 720)
+            mask = selector._get_mask_for_bbox(frame, [384, 144, 512, 432])
 
             assert mask is not None
             assert isinstance(mask, np.ndarray)
@@ -1231,7 +1126,7 @@ class TestMaskGenerationE2E:
         from core.models import AnalysisParameters
         from core.scene_utils import SubjectMasker
 
-        config = Config(logs_dir=str(tmp_path / "logs"), models_dir=str(tmp_path / "models"))
+        config = Config(logs_dir=str(tmp_path / "logs"), models_dir=str(module_model_registry.logger.config.models_dir))
         logger = AppLogger(config, log_to_console=False, log_to_file=False)
         registry = module_model_registry
         tm = ThumbnailManager(logger, config)
@@ -1259,6 +1154,7 @@ class TestMaskGenerationE2E:
             device="cuda",
         )
 
+        masker.initialize_models()
         assert masker.dam_tracker is not None
         # face_analyzer is optional and not used in this mask-focused test
 

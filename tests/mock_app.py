@@ -15,7 +15,9 @@ if str(project_root) not in sys.path:
 # and native library crashes in the mock app subprocess.
 from tests.helpers.mock_env import install_mocks
 
-install_mocks()
+_should_skip = os.environ.get("PYTEST_INTEGRATION_MODE") == "true" or "tests/ui" in " ".join(sys.argv)
+if not _should_skip:
+    install_mocks()
 
 import gradio as gr
 import numpy as np

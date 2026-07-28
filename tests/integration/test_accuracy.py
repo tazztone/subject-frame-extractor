@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import cv2
 import numpy as np
 import pytest
 import torch
@@ -114,25 +113,25 @@ def test_propagation_stability(real_video, module_model_registry, tmp_path):
             device="cuda",
         )
 
-        # Read first 5 frames for a quick but real test
-        cap = cv2.VideoCapture(video_path)
-        frames = []
-        for _ in range(5):
-            ret, frame = cap.read()
-            if not ret:
-                break
-            frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-        cap.release()
-
         # Propagate
-        masks, areas, empties, errors = propagator.propagate(shot_frames_rgb=frames, seed_idx=0, bbox_xywh=bbox)
+        frame_numbers = list(range(5))
+        frame_map = {i: f"frame_{i:06d}.png" for i in frame_numbers}
+        prompts = [{"frame": 0, "bbox": bbox, "obj_id": 1}]
+        masks, areas, empties, errors = propagator.propagate_video(
+            video_path=video_path,
+            frame_numbers=frame_numbers,
+            prompts=prompts,
+            frame_size=img_size,
+            frame_map=frame_map,
+        )
 
         # Assertions
-        assert len(masks) == len(frames)
-        assert not any(errors), f"Errors during propagation: {errors}"
+        assert len(masks) == 5
+        assert not any(errors.values()), f"Errors during propagation: {errors}"
 
         # Check that masks don't disappear completely
-        for i, m in enumerate(masks):
+        for i in frame_numbers:
+            m = masks[i]
             assert m is not None, f"Frame {i} has no mask"
             assert m.any(), f"Frame {i} mask is empty"
             # area is percentage (0-100)

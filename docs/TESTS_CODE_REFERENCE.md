@@ -438,12 +438,6 @@ class TestVideoE2E:
 @pytest.mark.gpu_e2e
 class TestMaskPropagatorE2E:
     """Tests for MaskPropagator with real SAM3 inference."""
-    @requires_sam3
-    def test_mask_propagator_propagate(self, tmp_path, module_model_registry):
-        """MaskPropagator.propagate() works with new SAM3 API."""
-    @requires_sam3
-    def test_mask_propagator_bidirectional(self, tmp_path, module_model_registry):
-        """MaskPropagator.propagate() works bidirectionally from middle frame."""
 @pytest.mark.gpu_e2e
 class TestOperatorE2E:
     """Tests for quality metric calculation using the Operator framework."""
@@ -464,7 +458,7 @@ class TestExportE2E:
 class TestCancellationE2E:
     """E2E tests for cancel operations during pipeline execution."""
     @requires_sam3
-    def test_propagation_with_cancel_event(self, tmp_path, test_frames_dir, module_model_registry):
+    def test_propagation_with_cancel_event(self, tmp_path, sample_video, module_model_registry):
         """MaskPropagator handles cancel event during propagation."""
     def test_analysis_pipeline_cancel(self, tmp_path, module_model_registry):
         """AnalysisPipeline handles cancel event gracefully."""
@@ -553,6 +547,7 @@ def test_session_load_restores_state(tmp_path):
 
 ```python
 project_root = Path(__file__).parent.parent
+_should_skip = os.environ.get('PYTEST_INTEGRATION_MODE') == 'true' or 'tests/...
 def get_mock_delay(default_seconds: float) -> float: ...
 def mock_extraction_run(self, tracker=None): ...
 def mock_pre_analysis_execution(event, context): ...
@@ -2380,12 +2375,6 @@ class TestMaskPropagatorLogic:
         """Test forward and backward propagation heartbeats."""
     def test_propagate_video_finally_failure(self, mask_propagator, mock_sam3_wrapper):
         """Test failure in close_session during finally block."""
-    def test_propagate_legacy_basic(self, mask_propagator, mock_sam3_wrapper):
-        """Test legacy propagate method success path."""
-    def test_propagate_legacy_no_tracker(self, mask_propagator):
-        """Test legacy propagate with no tracker."""
-    def test_propagate_legacy_error_paths(self, mask_propagator, mock_sam3_wrapper):
-        """Test legacy propagate error handling."""
 ```
 
 ### `📄 tests/unit/test_mask_propagator_oom.py`
@@ -2985,10 +2974,6 @@ class TestSeedSelector:
     @patch('core.scene_utils.seed_selector.postprocess_mask')
     def test_get_mask_for_bbox_success(self, mock_post, selector, tmp_path): ...
     def test_get_mask_for_bbox_error(self, selector): ...
-class TestMaskPropagator:
-    @patch('core.scene_utils.mask_propagator.postprocess_mask', side_effect=lambda x, **k: x)
-    def test_propagate_success(self, mock_post, mock_config_simple, mock_logger, mock_params): ...
-    def test_propagate_cancel(self, mock_config_simple, mock_logger, mock_params): ...
 class TestSubjectMasker:
     @patch('core.scene_utils.subject_masker.create_frame_map', return_value={0: 'frame_0.png'})
     def test_run_propagation(self, mock_create_map, mock_config_simple, mock_logger, mock_params, tmp_path): ...

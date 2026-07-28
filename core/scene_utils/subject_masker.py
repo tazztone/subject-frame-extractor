@@ -135,7 +135,7 @@ class SubjectMasker:
     def face_analyzer(self) -> Optional["FaceAnalysis"]:
         if self._face_analyzer is not None:
             return self._face_analyzer
-        if self.model_registry and self.params.compute_face_sim:
+        if self.model_registry and self.params.compute_face_sim and self.params.face_model_name:
             device = self._device or "cpu"
             self._face_analyzer = self.model_registry.get_face_analyzer(
                 model_name=self.params.face_model_name,

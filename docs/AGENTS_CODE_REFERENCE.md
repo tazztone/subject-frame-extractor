@@ -1579,8 +1579,6 @@ class MaskPropagator:
         """Initialize the MaskPropagator."""
     def propagate_video(self, video_path: str, frame_numbers: list[int], prompts: list[dict], frame_size: tuple[int, int], frame_map: dict[int, str], tracker: Optional['AdvancedProgressTracker']=None) -> tuple[dict, dict, dict, dict]:
         """Propagate masks using the video file directly (no temp JPEG I/O)."""
-    def propagate(self, shot_frames_rgb: list[np.ndarray], seed_idx: int, bbox_xywh: list[int], tracker: Optional['AdvancedProgressTracker']=None, additional_seeds: Optional[list[dict]]=None, frame_numbers: Optional[list[int]]=None) -> tuple[list, list, list, list]:
-        """[DEPRECATED] Legacy method: Propagate masks from a seed frame using in-memory..."""
     def close(self):
         """Release tracker resources."""
 ```

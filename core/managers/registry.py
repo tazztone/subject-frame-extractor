@@ -111,12 +111,17 @@ class ModelRegistry:
         device: str = "cpu",
     ) -> Any:
         """Gets or loads the InsightFace FaceAnalysis app, with OOM handling."""
+        if not model_name:
+            self.logger.warning("get_face_analyzer called with empty model_name. Returning None.")
+            return None
         from insightface.app import FaceAnalysis
 
         _config = self.config
         if _config is None and hasattr(self.logger, "config"):
             _config = self.logger.config  # type: ignore
-        models_path = str(_config.models_dir) if _config else "/tmp"
+        from pathlib import Path
+
+        models_path = str(Path(_config.models_dir).resolve()) if _config else "/tmp"
 
         model_key = f"face_analyzer_{model_name}_{device}_{det_size_tuple}"
 
@@ -133,8 +138,8 @@ class ModelRegistry:
                     self.logger.info(f"Face model loaded with {'CUDA' if is_cuda else 'CPU'}.")
                 return analyzer
             except Exception as e:
-                if "out of memory" in str(e) and device == "cuda":
-                    self.logger.warning("CUDA OOM, retrying with CPU...")
+                if device == "cuda":
+                    self.logger.warning(f"CUDA face analysis initialization failed: {e}. Retrying with CPU fallback...")
                     try:
                         analyzer = FaceAnalysis(name=model_name, root=models_path, providers=["CPUExecutionProvider"])
                         analyzer.prepare(ctx_id=-1, det_size=det_size_tuple)
@@ -210,7 +215,9 @@ class ModelRegistry:
         if _config is None and hasattr(self.logger, "config"):
             _config = self.logger.config  # type: ignore
 
-        _models_path = models_path or (str(_config.models_dir) if _config else None)
+        from pathlib import Path
+
+        _models_path = models_path or (str(Path(_config.models_dir).resolve()) if _config else None)
         _user_agent = user_agent or (_config.user_agent if _config else "SubjectFrameExtractor")
         _retry_params = retry_params or (1, [1])
 
@@ -224,9 +231,9 @@ class ModelRegistry:
             device = self.runtime_device_override or ("cuda" if torch.cuda.is_available() else "cpu")
             try:
                 return self._load_tracker_impl(model_name, _models_path, _user_agent, _retry_params, device, _config)
-            except RuntimeError as e:
-                if "out of memory" in str(e) and device == "cuda":
-                    self.logger.warning("CUDA OOM during tracker init. Switching to CPU.")
+            except Exception as e:
+                if device == "cuda":
+                    self.logger.warning(f"CUDA initialization failed for tracker: {e}. Switching to CPU.")
                     self.runtime_device_override = "cpu"
                     return self._load_tracker_impl(model_name, _models_path, _user_agent, _retry_params, "cpu", _config)
                 raise e
@@ -268,7 +275,7 @@ class ModelRegistry:
                 _logger.error(f"No URL configured for detector model: {model_name}")
                 return None
 
-            model_path = str(Path(_config.models_dir) / Path(model_url).name)
+            model_path = str(Path(_config.models_dir).resolve() / Path(model_url).name)
 
             if not Path(model_path).exists():
                 from core.error_handling import ErrorHandler
@@ -292,9 +299,9 @@ class ModelRegistry:
             current_device = self.runtime_device_override or _device
             try:
                 return SubjectDetector(model_path, _logger, device=current_device)
-            except RuntimeError as e:
-                if "out of memory" in str(e).lower() and current_device == "cuda":
-                    _logger.warning(f"CUDA OOM during detector '{model_name}' init. Switching to CPU.")
+            except Exception as e:
+                if current_device == "cuda":
+                    _logger.warning(f"CUDA initialization failed for detector '{model_name}': {e}. Switching to CPU.")
                     self.runtime_device_override = "cpu"
                     return SubjectDetector(model_path, _logger, device="cpu")
                 raise e

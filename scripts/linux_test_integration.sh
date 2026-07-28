@@ -15,6 +15,10 @@ fi
 echo "Running integration tests (real-mode, GPU-ready)..."
 echo "----------------------------------------------------"
 
+# Point to Python virtual environment bundled Nvidia libraries
+NVIDIA_LIBS=$(find "$PWD/.venv/lib/python3.12/site-packages/nvidia" -type d -name "lib" | paste -sd : -)
+export LD_LIBRARY_PATH="$NVIDIA_LIBS:$LD_LIBRARY_PATH"
+
 # Export integration mode so global mocks are disabled
 export PYTEST_INTEGRATION_MODE=true
 
