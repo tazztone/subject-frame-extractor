@@ -39,9 +39,15 @@ class SubjectHandler:
         labels, cluster_map = cluster_faces(all_faces, confidence)
         self.gallery_to_cluster_map = cluster_map
 
+        faces_by_label: Dict[int, list] = {}
+        for i, l in enumerate(labels):
+            faces_by_label.setdefault(l, []).append(all_faces[i])
+
         gallery_items = []
         for idx, label in cluster_map.items():
-            cluster_faces_list = [all_faces[i] for i, l in enumerate(labels) if l == label]
+            cluster_faces_list = faces_by_label.get(label, [])
+            if not cluster_faces_list:
+                continue
             best_face = max(cluster_faces_list, key=lambda x: x["det_score"])
 
             thumb_rgb = self.thumbnail_manager.get(Path(best_face["thumb_path"]))

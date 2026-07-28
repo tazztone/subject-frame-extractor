@@ -51,9 +51,11 @@ def get_cluster_representative(
         Tuple of (crop_path, crop_image, status_message)
     """
 
-    cluster_faces_list = [all_faces[i] for i, l in enumerate(labels) if l == target_label]
-    if not cluster_faces_list:
+    target_indices = np.where(labels == target_label)[0]
+    if len(target_indices) == 0:
         return None, None, "⚠️ Cluster not found"
+
+    cluster_faces_list = [all_faces[i] for i in target_indices]
 
     # Select face with highest detection score as the representative
     best_face = max(cluster_faces_list, key=lambda x: x["det_score"])
