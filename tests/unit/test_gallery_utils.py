@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
 
 from core.events import FilterEvent
 from ui.gallery_utils import _update_gallery, auto_set_thresholds, clear_mask_cache, on_filters_changed
@@ -12,8 +13,9 @@ class TestGalleryUtils:
     @patch("ui.gallery_utils.apply_all_filters_vectorized")
     @patch("ui.gallery_utils.render_mask_overlay")
     @patch("pathlib.Path.exists", return_value=True)
+    @pytest.mark.parametrize("sort_by", ["Score (Desc)", "Score (Asc)", "Time (Asc)", "Time (Desc)"])
     def test_update_gallery_kept(
-        self, mock_exists, mock_render, mock_apply, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger
+        self, mock_exists, mock_render, mock_apply, sort_by, sample_frames_data, mock_thumbnail_manager, mock_config, mock_logger
     ):
         # Mock apply to return frames 1 and 2 kept
         kept = sample_frames_data[:2]
@@ -33,7 +35,7 @@ class TestGalleryUtils:
             filters,
             output_dir,
             gallery_view,
-            "Score (Desc)",
+            sort_by,
             False,
             0.5,
             mock_thumbnail_manager,
