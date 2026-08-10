@@ -359,3 +359,15 @@ def test_cli_group_exists(runner):
     result = runner.invoke(cli, ["--help"])
     assert result.exit_code == 0
     assert "Subject Frame Extractor CLI." in result.output
+
+import runpy
+def test_cli_main_error_handling(capsys):
+    """Test that exceptions raised from cli() are caught in the __main__ block and exit with code 1."""
+    with patch("core.cli_args.cli", side_effect=Exception("Simulated error")):
+        with pytest.raises(SystemExit) as exc_info:
+            runpy.run_path("cli.py", run_name="__main__")
+
+        assert exc_info.value.code == 1
+
+        captured = capsys.readouterr()
+        assert "❌ Error: Simulated error" in captured.err
