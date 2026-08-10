@@ -119,3 +119,19 @@ def test_parse_args_defaults_extended():
         assert args.share is None
         assert args.auth is None
         assert args.ssl_verify is None
+
+def test_main_init_exception(capsys):
+    import app
+
+    with (
+        patch("app.Config", side_effect=Exception("Config Error")),
+        patch("sys.exit") as mock_exit,
+        patch("app.cleanup_models") as mock_cleanup,
+    ):
+        with patch("sys.argv", ["app.py"]):
+            app.main()
+        mock_exit.assert_called_once_with(1)
+        mock_cleanup.assert_called_once_with(None)
+
+        captured = capsys.readouterr()
+        assert "Error starting application: Config Error" in captured.out
