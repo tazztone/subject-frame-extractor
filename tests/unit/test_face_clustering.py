@@ -3,7 +3,9 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 
-from core.face_clustering import cluster_faces, get_cluster_representative
+from unittest.mock import MagicMock
+
+from core.face_clustering import cluster_faces, get_cluster_representative, scan_faces_in_session
 
 
 def test_cluster_faces_empty():
@@ -94,3 +96,106 @@ def test_get_cluster_representative_read_fail(mock_video_capture):
 
     path, crop, msg = get_cluster_representative(faces, labels, 0, "vid.mp4", "out")
     assert "Could not read video frame" in msg
+
+
+@patch("core.io_utils.create_frame_map")
+def test_scan_faces_in_session_no_analyzer(mock_create_frame_map):
+    context = MagicMock()
+    context.model_registry.get_analysis_models.return_value = {}
+    params = MagicMock()
+    params.output_folder = "out"
+
+    result = scan_faces_in_session(context, params)
+    assert result == []
+    context.logger.warning.assert_called_with("Face analyzer not available")
+
+
+@patch("core.io_utils.create_frame_map")
+def test_scan_faces_in_session_no_frame_map(mock_create_frame_map):
+    mock_create_frame_map.return_value = {}
+    context = MagicMock()
+    context.model_registry.get_analysis_models.return_value = {"face_analyzer": MagicMock()}
+    params = MagicMock()
+    params.output_folder = "out"
+
+    result = scan_faces_in_session(context, params)
+    assert result == []
+    mock_create_frame_map.assert_called_once()
+
+
+@patch("core.io_utils.create_frame_map")
+def test_scan_faces_in_session_cancelled(mock_create_frame_map):
+    mock_create_frame_map.return_value = {0: "thumb0.jpg", 1: "thumb1.jpg"}
+    context = MagicMock()
+    context.model_registry.get_analysis_models.return_value = {"face_analyzer": MagicMock()}
+    context.cancel_event.is_set.return_value = True
+    params = MagicMock()
+    params.output_folder = "out"
+
+    result = scan_faces_in_session(context, params)
+    assert result == []
+    context.logger.info.assert_any_call("Face scanning cancelled")
+
+
+@patch("core.io_utils.create_frame_map")
+def test_scan_faces_in_session_skip_pre_sample(mock_create_frame_map):
+    mock_create_frame_map.return_value = {1: "thumb1.jpg"} # pre_sample_nth is 2
+    context = MagicMock()
+    face_analyzer = MagicMock()
+    context.model_registry.get_analysis_models.return_value = {"face_analyzer": face_analyzer}
+    context.cancel_event.is_set.return_value = False
+    params = MagicMock()
+    params.output_folder = "out"
+    params.pre_sample_nth = 2
+
+    result = scan_faces_in_session(context, params)
+    assert result == []
+    face_analyzer.get.assert_not_called()
+
+
+@patch("core.io_utils.create_frame_map")
+def test_scan_faces_in_session_no_thumb(mock_create_frame_map):
+    mock_create_frame_map.return_value = {0: "thumb0.jpg"}
+    context = MagicMock()
+    face_analyzer = MagicMock()
+    context.model_registry.get_analysis_models.return_value = {"face_analyzer": face_analyzer}
+    context.cancel_event.is_set.return_value = False
+    context.thumbnail_manager.get.return_value = None
+    params = MagicMock()
+    params.output_folder = "out"
+    params.pre_sample_nth = 1
+
+    result = scan_faces_in_session(context, params)
+    assert result == []
+    context.thumbnail_manager.get.assert_called_once()
+    face_analyzer.get.assert_not_called()
+
+
+@patch("core.io_utils.create_frame_map")
+def test_scan_faces_in_session_happy_path(mock_create_frame_map):
+    mock_create_frame_map.return_value = {0: "thumb0.jpg"}
+    context = MagicMock()
+    face_analyzer = MagicMock()
+
+    mock_face = MagicMock()
+    mock_face.bbox = [10, 10, 50, 50]
+    mock_face.normed_embedding = np.array([0.1, 0.2, 0.3])
+    mock_face.det_score = 0.95
+    face_analyzer.get.return_value = [mock_face]
+
+    context.model_registry.get_analysis_models.return_value = {"face_analyzer": face_analyzer}
+    context.cancel_event.is_set.return_value = False
+    context.thumbnail_manager.get.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
+
+    params = MagicMock()
+    params.output_folder = "out"
+    params.pre_sample_nth = 1
+
+    result = scan_faces_in_session(context, params)
+
+    assert len(result) == 1
+    assert result[0]["frame_num"] == 0
+    assert result[0]["bbox"] == [10, 10, 50, 50]
+    np.testing.assert_array_equal(result[0]["embedding"], np.array([0.1, 0.2, 0.3]))
+    assert result[0]["det_score"] == 0.95
+    assert "thumb0.jpg" in result[0]["thumb_path"]
