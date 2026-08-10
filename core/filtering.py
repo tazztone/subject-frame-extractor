@@ -47,23 +47,30 @@ def load_and_prep_filter_data(output_dir: str, get_all_filter_keys: Callable, co
         else:
             metric_configs[k] = {"path": (k,), "alt_path": ("metrics", f"{k}_score"), "range": (0.0, 100.0)}
 
-    for k in get_all_filter_keys():
+    keys = get_all_filter_keys()
+    configs = []
+    for k in keys:
         cfg = metric_configs.get(k)
-        if not cfg:
-            continue
-        path, alt = cfg.get("path"), cfg.get("alt_path")
+        if cfg:
+            configs.append((k, cfg.get("path"), cfg.get("alt_path")))
 
-        vals = []
-        for f in all_frames:
+    vals_dict = {k: [] for k in keys if k in metric_configs}
+
+    for f in all_frames:
+        for k, path, alt in configs:
             val = None
             if path:
                 val = _get_nested_value(f, path)
             if val is None and alt:
                 val = _get_nested_value(f, alt)
             if val is not None:
-                vals.append(val)
+                vals_dict[k].append(val)
 
-        vals = np.asarray(vals, dtype=float)
+    for k in keys:
+        cfg = metric_configs.get(k)
+        if not cfg:
+            continue
+        vals = np.asarray(vals_dict[k], dtype=float)
         if vals.size > 0:
             counts, bins = np.histogram(vals, bins=50, range=cfg.get("range", (0.0, 100.0)))
             metric_values[k], metric_values[f"{k}_hist"] = vals.tolist(), (counts.tolist(), bins.tolist())
@@ -83,14 +90,17 @@ def _extract_metric_arrays(all_frames_data: List[Dict[str, Any]], config: "Confi
 
     defs = OperatorRegistry.get_all_filter_definitions(config)
 
-    metric_arrays = {}
-    for d in defs:
-        path = d.metadata_path
-        vals = []
-        for f in all_frames_data:
+    metric_arrays = {d.key: [] for d in defs}
+    paths = [(d.key, d.metadata_path) for d in defs]
+
+    for f in all_frames_data:
+        for k, path in paths:
             v = _get_nested_value(f, path)
-            vals.append(v if v is not None else np.nan)
-        metric_arrays[d.key] = np.array(vals, dtype=np.float32)
+            metric_arrays[k].append(v if v is not None else np.nan)
+
+    for d in defs:
+        metric_arrays[d.key] = np.array(metric_arrays[d.key], dtype=np.float32)
+
     return metric_arrays
 
 
