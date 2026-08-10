@@ -14,6 +14,123 @@ if TYPE_CHECKING:
 from core.db_schema import migrate_database
 
 
+class LazyRowDict(dict):
+    __slots__ = ('_parsed',)
+
+    def __init__(self, row_dict: Dict[str, Any]):
+        super().__init__(row_dict)
+        self._parsed = False
+
+    def _parse(self) -> None:
+        if not self._parsed:
+            self._parsed = True
+            metrics = super().get("metrics")
+            if isinstance(metrics, str):
+                try:
+                    parsed = json.loads(metrics)
+                    if isinstance(parsed, dict):
+                        super().update(parsed)
+                    super().__setitem__("metrics", parsed)
+                except json.JSONDecodeError:
+                    pass
+
+    def __getitem__(self, key: str) -> Any:
+        if not self._parsed:
+            if key == "metrics":
+                self._parse()
+                return super().__getitem__(key)
+            try:
+                return super().__getitem__(key)
+            except KeyError:
+                self._parse()
+                return super().__getitem__(key)
+        return super().__getitem__(key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if not self._parsed:
+            if key == "metrics":
+                self._parse()
+                return super().get(key, default)
+            if super().__contains__(key):
+                return super().get(key)
+            self._parse()
+        return super().get(key, default)
+
+    def __contains__(self, key: Any) -> bool:
+        if not self._parsed:
+            if super().__contains__(key):
+                return True
+            self._parse()
+        return super().__contains__(key)
+
+    def keys(self):
+        if not self._parsed:
+            self._parse()
+        return super().keys()
+
+    def values(self):
+        if not self._parsed:
+            self._parse()
+        return super().values()
+
+    def items(self):
+        if not self._parsed:
+            self._parse()
+        return super().items()
+
+    def __iter__(self):
+        if not self._parsed:
+            self._parse()
+        return super().__iter__()
+
+    def __len__(self) -> int:
+        if not self._parsed:
+            self._parse()
+        return super().__len__()
+
+    def copy(self) -> dict:
+        if not self._parsed:
+            self._parse()
+        return super().copy()
+
+    def pop(self, key: str, default: Any = None) -> Any:
+        if not self._parsed:
+            self._parse()
+        if default is not None:
+            return super().pop(key, default)
+        return super().pop(key)
+
+    def popitem(self) -> tuple:
+        if not self._parsed:
+            self._parse()
+        return super().popitem()
+
+    def setdefault(self, key: str, default: Any = None) -> Any:
+        if not self._parsed:
+            self._parse()
+        return super().setdefault(key, default)
+
+    def update(self, *args, **kwargs) -> None:
+        if not self._parsed:
+            self._parse()
+        super().update(*args, **kwargs)
+
+    def __delitem__(self, key: str) -> None:
+        if not self._parsed:
+            self._parse()
+        super().__delitem__(key)
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        if not self._parsed:
+            self._parse()
+        super().__setitem__(key, value)
+
+    def clear(self) -> None:
+        if not self._parsed:
+            self._parse()
+        super().clear()
+
+
 class Database:
     def __init__(
         self,
@@ -206,15 +323,7 @@ class Database:
 
         results = []
         for row in rows:
-            row_dict = dict(row)
-            if "metrics" in row_dict and isinstance(row_dict["metrics"], str):
-                try:
-                    parsed = json.loads(row_dict["metrics"])
-                    row_dict.update(parsed)
-                    row_dict["metrics"] = parsed
-                except json.JSONDecodeError:
-                    pass
-            results.append(row_dict)
+            results.append(LazyRowDict(dict(row)))
         return results
 
     def count_errors(self) -> int:

@@ -107,7 +107,49 @@ def test_load_all_metadata_json_error(db):
     results = db.load_all_metadata()
     assert len(results) == 1
     assert results[0]["filename"] == "invalid.jpg"
-    assert results[0]["metrics"] == "{invalid json"
+    assert results[0].get("metrics") == "{invalid json"
+
+
+def test_lazy_row_dict_get_without_parsing():
+    from core.database import LazyRowDict
+    data = {"filename": "test.jpg", "metrics": '{"score": 0.9}'}
+    lazy_dict = LazyRowDict(data)
+
+    assert lazy_dict.get("filename") == "test.jpg"
+    assert lazy_dict._parsed is False
+
+
+def test_lazy_row_dict_get_with_parsing():
+    from core.database import LazyRowDict
+    data = {"filename": "test.jpg", "metrics": '{"score": 0.9}'}
+    lazy_dict = LazyRowDict(data)
+
+    assert lazy_dict.get("score") == 0.9
+    assert lazy_dict._parsed is True
+
+
+def test_lazy_row_dict_item():
+    from core.database import LazyRowDict
+    data = {"filename": "test.jpg", "metrics": '{"score": 0.9}'}
+    lazy_dict = LazyRowDict(data)
+
+    assert lazy_dict["filename"] == "test.jpg"
+    assert lazy_dict._parsed is False
+
+    assert lazy_dict["score"] == 0.9
+    assert lazy_dict._parsed is True
+
+
+def test_lazy_row_dict_contains():
+    from core.database import LazyRowDict
+    data = {"filename": "test.jpg", "metrics": '{"score": 0.9}'}
+    lazy_dict = LazyRowDict(data)
+
+    assert "filename" in lazy_dict
+    assert lazy_dict._parsed is False
+
+    assert "score" in lazy_dict
+    assert lazy_dict._parsed is True
 
 
 def test_error_handler_integration(db_path):
