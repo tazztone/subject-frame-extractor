@@ -71,3 +71,14 @@ def test_run_pipeline_close_generator():
 
     _run_pipeline(mock_gen_obj, "TestStage")
     assert mock_gen_obj.close.called
+
+def test_run_pipeline_click_exception():
+    def mock_gen():
+        yield {"unified_log": "Stage 1", "done": False}
+        raise click.ClickException("Click error occurred")
+
+    with patch("click.secho") as mock_secho:
+        with pytest.raises(click.ClickException) as excinfo:
+            _run_pipeline(mock_gen(), "TestStage")
+        assert "TestStage aborted due to unexpected error: Click error occurred" in str(excinfo.value)
+        mock_secho.assert_called_with("Critial error in TestStage: Click error occurred", fg="red")
