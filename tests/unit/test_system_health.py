@@ -126,3 +126,50 @@ def test_simulate_pipeline_success(tmp_path):
         # Verify that we got OK for all stages
         stages_covered = [line for line in report if "Stage" in line and "OK" in line]
         assert len(stages_covered) >= 5
+
+
+def test_memory_watchdog_start_enabled():
+    from core.system_health import MemoryWatchdog
+    import threading
+
+    config = MagicMock()
+    config.monitoring_memory_watchdog_enabled = True
+    logger = MagicMock()
+
+    watchdog = MemoryWatchdog(config, logger)
+
+    with patch("threading.Thread") as mock_thread_class:
+        mock_thread_instance = MagicMock()
+        mock_thread_class.return_value = mock_thread_instance
+
+        watchdog.start()
+
+        # Check if stop_event was cleared
+        assert not watchdog.stop_event.is_set()
+
+        # Check if thread was created correctly
+        mock_thread_class.assert_called_once_with(target=watchdog._run, daemon=True)
+
+        # Check if thread was started
+        mock_thread_instance.start.assert_called_once()
+
+        # Check if logger was called
+        logger.info.assert_called_once_with("Memory watchdog started.", component="monitor")
+
+
+def test_memory_watchdog_start_disabled():
+    from core.system_health import MemoryWatchdog
+
+    config = MagicMock()
+    config.monitoring_memory_watchdog_enabled = False
+    logger = MagicMock()
+
+    watchdog = MemoryWatchdog(config, logger)
+
+    with patch("threading.Thread") as mock_thread_class:
+        watchdog.start()
+
+        # Thread should not be created if disabled
+        mock_thread_class.assert_not_called()
+        # Logger should not be called
+        logger.info.assert_not_called()
