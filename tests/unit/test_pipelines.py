@@ -12,6 +12,7 @@ from core.pipelines import (
     execute_extraction,
     execute_pre_analysis,
     execute_propagation,
+    execute_analysis_orchestrator,
 )
 
 
@@ -353,3 +354,97 @@ def test_fingerprint_failure_is_silent(mock_runtime, tmp_path, default_extractio
     assert isinstance(results[0], ExtractionResult)
     assert results[0].done is True
     mock_runtime["logger"].warning.assert_called()
+def test_execute_analysis_orchestrator_success_video(mock_runtime, default_pre_analysis_event):
+    event = PreAnalysisEvent(**default_pre_analysis_event)
+
+    pre_result = PreAnalysisResult(
+        unified_log="Pre-analysis done",
+        output_dir=event.output_folder,
+        scenes=[{"shot_id": 1}],
+        video_path=event.video_path
+    )
+
+    mock_pre_gen = [pre_result]
+    mock_prop_gen = [PropagationResult(unified_log="Prop done", output_dir=event.output_folder)]
+    mock_ana_gen = [AnalysisResult(unified_log="Analysis done", output_dir=event.output_folder, metadata_path="meta", done=True)]
+
+    with patch("core.pipelines.execute_pre_analysis", return_value=iter(mock_pre_gen)), \
+         patch("core.pipelines.execute_propagation", return_value=iter(mock_prop_gen)), \
+         patch("core.pipelines.execute_analysis", return_value=iter(mock_ana_gen)), \
+         patch("core.pipelines.AnalysisParameters"):
+
+        gen = execute_analysis_orchestrator(event, mock_runtime["context"])
+        results = list(gen)
+
+    assert len(results) == 2
+    assert isinstance(results[0], PropagationResult)
+    assert isinstance(results[1], AnalysisResult)
+
+def test_execute_analysis_orchestrator_success_folder(mock_runtime, default_pre_analysis_event):
+    default_pre_analysis_event["video_path"] = ""
+    event = PreAnalysisEvent(**default_pre_analysis_event)
+
+    pre_result = PreAnalysisResult(
+        unified_log="Pre-analysis done",
+        output_dir=event.output_folder,
+        scenes=[{"shot_id": 1}],
+        video_path=event.video_path
+    )
+
+    mock_pre_gen = [pre_result]
+    mock_ana_gen = [AnalysisResult(unified_log="Analysis done", output_dir=event.output_folder, metadata_path="meta", done=True)]
+
+    with patch("core.pipelines.execute_pre_analysis", return_value=iter(mock_pre_gen)), \
+         patch("core.pipelines.execute_analysis", return_value=iter(mock_ana_gen)), \
+         patch("core.pipelines.AnalysisParameters"):
+
+        gen = execute_analysis_orchestrator(event, mock_runtime["context"])
+        results = list(gen)
+
+    assert len(results) == 2
+    assert isinstance(results[0], PropagationResult)
+    assert results[0].unified_log == "Mask Propagation (Skipped for Folder)"
+    assert isinstance(results[1], AnalysisResult)
+
+def test_execute_analysis_orchestrator_pre_analysis_failure(mock_runtime, default_pre_analysis_event):
+    event = PreAnalysisEvent(**default_pre_analysis_event)
+
+    mock_pre_gen = [PipelineFailure(unified_log="Pre fail", status_message="fail", error_message="fail")]
+
+    with patch("core.pipelines.execute_pre_analysis", return_value=iter(mock_pre_gen)), \
+         patch("core.pipelines.execute_propagation") as mock_prop, \
+         patch("core.pipelines.execute_analysis") as mock_ana, \
+         patch("core.pipelines.AnalysisParameters"):
+
+        gen = execute_analysis_orchestrator(event, mock_runtime["context"])
+        results = list(gen)
+
+    assert len(results) == 1
+    assert isinstance(results[0], PipelineFailure)
+    mock_prop.assert_not_called()
+    mock_ana.assert_not_called()
+
+def test_execute_analysis_orchestrator_propagation_failure(mock_runtime, default_pre_analysis_event):
+    event = PreAnalysisEvent(**default_pre_analysis_event)
+
+    pre_result = PreAnalysisResult(
+        unified_log="Pre-analysis done",
+        output_dir=event.output_folder,
+        scenes=[{"shot_id": 1}],
+        video_path=event.video_path
+    )
+
+    mock_pre_gen = [pre_result]
+    mock_prop_gen = [PipelineFailure(unified_log="Prop fail", status_message="fail", error_message="fail")]
+
+    with patch("core.pipelines.execute_pre_analysis", return_value=iter(mock_pre_gen)), \
+         patch("core.pipelines.execute_propagation", return_value=iter(mock_prop_gen)), \
+         patch("core.pipelines.execute_analysis") as mock_ana, \
+         patch("core.pipelines.AnalysisParameters"):
+
+        gen = execute_analysis_orchestrator(event, mock_runtime["context"])
+        results = list(gen)
+
+    assert len(results) == 1
+    assert isinstance(results[0], PipelineFailure)
+    mock_ana.assert_not_called()
