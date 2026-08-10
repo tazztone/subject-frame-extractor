@@ -74,6 +74,7 @@ class TestPipelinesOrchestrator:
     ):
         """Test full chain for video: Pre -> Prop -> Ana."""
         context.model_registry.get_analysis_models.return_value = {"models": "loaded"}
+        context.loaded_models = {"pre": "loaded"} # To cover the if not context.loaded_models branch
 
         # Pre-analysis yields something then sets done=True
         mock_execute_pre_analysis.side_effect = _make_gen(
@@ -166,6 +167,101 @@ class TestPipelinesOrchestrator:
         assert results[0].unified_log == "Failed early"
         mock_execute_propagation.assert_not_called()
 
+    @patch("core.pipelines.execute_pre_analysis")
+    @patch("core.pipelines.execute_propagation")
+    @patch("core.pipelines.execute_analysis")
+    def test_execute_analysis_orchestrator_intermediate_yield(
+        self,
+        mock_execute_analysis,
+        mock_execute_propagation,
+        mock_execute_pre_analysis,
+        mock_pre_analysis_event,
+        context,
+    ):
+        """Test intermediate yields are passed through in orchestrator."""
+        context.model_registry.get_analysis_models.return_value = {}
+        from pydantic import BaseModel
+        class DummyUpdate(BaseModel):
+            pass
+
+        dummy_update = DummyUpdate()
+
+        mock_execute_pre_analysis.side_effect = _make_gen(
+            dummy_update,
+            PreAnalysisResult(unified_log="Pre done", scenes=[{"shot_id": 1}], output_dir="/tmp/out", video_path="v.mp4")
+        )
+        mock_execute_propagation.side_effect = _make_gen(
+            PropagationResult(unified_log="Prop done", output_dir="/tmp/out")
+        )
+        mock_execute_analysis.side_effect = _make_gen(
+            AnalysisResult(unified_log="Ana done", output_dir="/tmp/out", metadata_path="/tmp/out/metadata.db")
+        )
+
+        gen = execute_analysis_orchestrator(
+            event=mock_pre_analysis_event,
+            context=context,
+        )
+
+        results = list(gen)
+        assert dummy_update in results
+        # PreAnalysisResult is not yielded, only PropagationResult and AnalysisResult
+        assert any(isinstance(r, PropagationResult) for r in results)
+        assert any(isinstance(r, AnalysisResult) for r in results)
+
+    @patch("core.pipelines.execute_pre_analysis")
+    @patch("core.pipelines.execute_propagation")
+    def test_execute_analysis_orchestrator_empty_pre_analysis(
+        self,
+        mock_execute_propagation,
+        mock_execute_pre_analysis,
+        mock_pre_analysis_event,
+        context,
+    ):
+        """Chain stops if Pre-Analysis yields nothing."""
+        context.model_registry.get_analysis_models.return_value = {}
+
+        mock_execute_pre_analysis.side_effect = _make_gen()
+
+        gen = execute_analysis_orchestrator(
+            event=mock_pre_analysis_event,
+            context=context,
+        )
+
+        results = list(gen)
+
+        assert len(results) == 0
+        mock_execute_propagation.assert_not_called()
+
+    @patch("core.pipelines.execute_pre_analysis")
+    @patch("core.pipelines.execute_propagation")
+    def test_execute_analysis_orchestrator_propagation_failure(
+        self,
+        mock_execute_propagation,
+        mock_execute_pre_analysis,
+        mock_pre_analysis_event,
+        context,
+    ):
+        """Chain stops if Propagation fails."""
+        context.model_registry.get_analysis_models.return_value = {}
+        mock_pre_analysis_event.video_path = "v.mp4"
+
+        mock_execute_pre_analysis.side_effect = _make_gen(
+            PreAnalysisResult(unified_log="Pre done", scenes=[{"shot_id": 1}], output_dir="/tmp/out", video_path="v.mp4")
+        )
+        mock_execute_propagation.side_effect = _make_gen(
+            PipelineFailure(unified_log="Prop failed", status_message="Error", error_message="failed")
+        )
+
+        gen = execute_analysis_orchestrator(
+            event=mock_pre_analysis_event,
+            context=context,
+        )
+
+        results = list(gen)
+        assert len(results) == 1
+        assert isinstance(results[0], PipelineFailure)
+        assert results[0].unified_log == "Prop failed"
+
     @patch("core.pipelines.execute_extraction")
     @patch("core.pipelines.execute_analysis_orchestrator")
     def test_execute_full_pipeline_success(
@@ -226,4 +322,61 @@ class TestPipelinesOrchestrator:
         assert len(results) == 1
         assert isinstance(results[0], PipelineFailure)
         assert results[0].unified_log == "Extraction failed"
+        mock_orchestrator.assert_not_called()
+
+    @patch("core.pipelines.execute_extraction")
+    @patch("core.pipelines.execute_analysis_orchestrator")
+    def test_execute_full_pipeline_intermediate_yield(
+        self,
+        mock_orchestrator,
+        mock_execute_extraction,
+        mock_extraction_event,
+        context,
+    ):
+        """Test intermediate yields are passed through in full pipeline."""
+        from pydantic import BaseModel
+        class DummyUpdate(BaseModel):
+            pass
+
+        dummy_update = DummyUpdate()
+
+        mock_execute_extraction.side_effect = _make_gen(
+            dummy_update,
+            ExtractionResult(unified_log="Ext done", video_path="v.mp4", output_dir="/tmp/out")
+        )
+        mock_orchestrator.side_effect = _make_gen(
+            AnalysisResult(unified_log="Orchestrator working", output_dir="/tmp/out")
+        )
+
+        gen = execute_full_pipeline(
+            event=mock_extraction_event,
+            context=context,
+        )
+
+        results = list(gen)
+        assert dummy_update in results
+        # ExtractionResult is not yielded
+        assert any(isinstance(r, PropagationResult) and r.unified_log == "Moving to Analysis stages..." for r in results)
+        assert any(isinstance(r, AnalysisResult) for r in results)
+
+    @patch("core.pipelines.execute_extraction")
+    @patch("core.pipelines.execute_analysis_orchestrator")
+    def test_execute_full_pipeline_empty_extraction(
+        self,
+        mock_orchestrator,
+        mock_execute_extraction,
+        mock_extraction_event,
+        context,
+    ):
+        """Chain stops if Extraction yields nothing."""
+        mock_execute_extraction.side_effect = _make_gen()
+
+        gen = execute_full_pipeline(
+            event=mock_extraction_event,
+            context=context,
+        )
+
+        results = list(gen)
+
+        assert len(results) == 0
         mock_orchestrator.assert_not_called()
