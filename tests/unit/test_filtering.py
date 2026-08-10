@@ -97,6 +97,38 @@ class TestFiltering:
         # Verify it was called twice, once for metric1 and once for metric3
         assert mock_histogram_svg.call_count == 2
 
+    @patch("core.filtering.histogram_svg")
+    def test_build_all_metric_svgs_empty_keys(self, mock_histogram_svg, mock_logger):
+        from core.filtering import build_all_metric_svgs
+
+        per_metric_values = {
+            "metric1_hist": ([1, 2, 3], [0.0, 0.5, 1.0, 1.5]),
+        }
+
+        def get_all_filter_keys():
+            return []
+
+        svgs = build_all_metric_svgs(per_metric_values, get_all_filter_keys, mock_logger)
+
+        assert svgs == {}
+        mock_histogram_svg.assert_not_called()
+
+    @patch("core.filtering.histogram_svg")
+    def test_build_all_metric_svgs_no_hist_keys(self, mock_histogram_svg, mock_logger):
+        from core.filtering import build_all_metric_svgs
+
+        per_metric_values = {
+            "metric1": [1, 2, 3],
+        }
+
+        def get_all_filter_keys():
+            return ["metric1", "metric2"]
+
+        svgs = build_all_metric_svgs(per_metric_values, get_all_filter_keys, mock_logger)
+
+        assert svgs == {}
+        mock_histogram_svg.assert_not_called()
+
     # --- Array Extraction ---
 
     def test_extract_metric_arrays(self, sample_frames, mock_config):
