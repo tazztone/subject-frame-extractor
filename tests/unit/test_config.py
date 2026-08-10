@@ -266,3 +266,16 @@ def test_json_config_settings_source_json_error():
     ):
         assert json_config_settings_source() == {}
         mock_logger.assert_called_once()
+
+
+def test_json_config_settings_source_file_not_found_exception():
+    """Test JSON config source when file is not found while reading."""
+    from core.config import json_config_settings_source
+
+    with (
+        patch("core.config.Path.is_file", return_value=True),
+        patch("builtins.open", side_effect=FileNotFoundError("file not found")),
+        patch("core.config.logger.error") as mock_logger,
+    ):
+        assert json_config_settings_source() == {}
+        mock_logger.assert_called_once()
