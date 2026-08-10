@@ -7,6 +7,7 @@ import pytest
 
 from core.io_utils import (
     _compute_sha256,
+    atomic_write_text,
     create_frame_map,
     detect_hwaccel,
     download_model,
@@ -231,3 +232,37 @@ def test_create_frame_map_json_error(tmp_path):
     fmap = create_frame_map(tmp_path, logger)
     assert fmap == {}
     assert logger.error.called
+
+def test_atomic_write_text_success(tmp_path):
+    target = tmp_path / "test.txt"
+    content = "atomic content 123"
+
+    atomic_write_text(target, content)
+
+    assert target.exists()
+    assert target.read_text(encoding="utf-8") == content
+
+
+def test_atomic_write_text_creates_directories(tmp_path):
+    target = tmp_path / "nested" / "dir" / "test.txt"
+    content = "nested content"
+
+    atomic_write_text(target, content)
+
+    assert target.exists()
+    assert target.read_text(encoding="utf-8") == content
+
+
+@patch("os.replace")
+def test_atomic_write_text_cleanup_on_error(mock_replace, tmp_path):
+    mock_replace.side_effect = OSError("Permission denied")
+    target = tmp_path / "test.txt"
+    content = "content that fails to write"
+
+    with pytest.raises(OSError, match="Permission denied"):
+        atomic_write_text(target, content)
+
+    # verify that the temporary file was created and then removed
+    temp_files = list(tmp_path.glob("*.tmp"))
+    assert len(temp_files) == 0
+    assert not target.exists()
