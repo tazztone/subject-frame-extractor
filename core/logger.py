@@ -391,6 +391,6 @@ class AppLogger:
         try:
             # Fix Issue 4: Use the stored session_log_file directly (no globbing)
             if self.session_log_file and self.session_log_file.exists():
-                shutil.copy(self.session_log_file, Path(session_dir) / "session.log")
-        except Exception:
-            pass
+                shutil.copy2(self.session_log_file, Path(session_dir) / "session.log")
+        except Exception as e:
+            self.error(f"Failed to copy log to output: {e}", component="system")
