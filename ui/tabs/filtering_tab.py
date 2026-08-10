@@ -207,6 +207,17 @@ class FilteringTabBuilder:
                             },
                         )
                         self.app._create_component(
+                            "gallery_sort_dropdown",
+                            "dropdown",
+                            {
+                                "choices": ["Score (Desc)", "Score (Asc)", "Time (Asc)", "Time (Desc)"],
+                                "value": "Score (Desc)",
+                                "label": "Sort By",
+                                "container": False,
+                                "show_label": False,
+                            },
+                        )
+                        self.app._create_component(
                             "show_mask_overlay_input",
                             "checkbox",
                             {"label": "Mask Overlay", "value": self.config.gradio_show_mask_overlay},

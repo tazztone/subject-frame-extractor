@@ -174,6 +174,7 @@ class FilterEvent(UIEvent):
     per_metric_values: Dict[str, Any]
     output_dir: str
     gallery_view: str
+    sort_by: str = "Score (Desc)"
     show_overlay: bool
     overlay_alpha: float = Field(ge=0, le=1.0)
     require_face_match: bool
