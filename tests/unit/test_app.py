@@ -120,6 +120,7 @@ def test_parse_args_defaults_extended():
         assert args.auth is None
         assert args.ssl_verify is None
 
+
 def test_main_init_exception(capsys):
     import app
 
@@ -135,3 +136,39 @@ def test_main_init_exception(capsys):
 
         captured = capsys.readouterr()
         assert "Error starting application: Config Error" in captured.out
+
+
+def test_onnxruntime_import_error():
+    """Test graceful handling when onnxruntime is missing."""
+    import sys
+
+    # If app is already imported, save it so we can restore it after the test
+    original_app = sys.modules.get("app")
+    if "app" in sys.modules:
+        del sys.modules["app"]
+
+    # Save a snapshot of sys.modules to restore afterwards
+    original_modules = sys.modules.copy()
+
+    try:
+        with patch.dict(
+            "sys.modules",
+            {
+                "onnxruntime": None,
+                "torch": MagicMock(),
+                "core.config": MagicMock(),
+                "core.logger": MagicMock(),
+                "core.managers": MagicMock(),
+                "ui.app_ui": MagicMock(),
+            },
+        ):
+            # This should successfully import app, catching the ImportError internally
+            import app  # noqa: F401
+    finally:
+        # Restore original module to avoid test pollution
+        sys.modules.clear()
+        sys.modules.update(original_modules)
+        if original_app is not None:
+            sys.modules["app"] = original_app
+        elif "app" in sys.modules:
+            del sys.modules["app"]
