@@ -73,6 +73,30 @@ class TestFiltering:
         assert svg == ""
         mock_fig.savefig.assert_called()
 
+    @patch("core.filtering.histogram_svg")
+    def test_build_all_metric_svgs(self, mock_histogram_svg, mock_logger):
+        from core.filtering import build_all_metric_svgs
+
+        mock_histogram_svg.return_value = "<svg>mock</svg>"
+        per_metric_values = {
+            "metric1_hist": ([1, 2, 3], [0.0, 0.5, 1.0, 1.5]),
+            "metric3_hist": ([4, 5], [0, 1, 2]),
+        }
+
+        def get_all_filter_keys():
+            return ["metric1", "metric2", "metric3"]
+
+        svgs = build_all_metric_svgs(per_metric_values, get_all_filter_keys, mock_logger)
+
+        assert "metric1" in svgs
+        assert "metric3" in svgs
+        assert "metric2" not in svgs
+        assert svgs["metric1"] == "<svg>mock</svg>"
+        assert svgs["metric3"] == "<svg>mock</svg>"
+
+        # Verify it was called twice, once for metric1 and once for metric3
+        assert mock_histogram_svg.call_count == 2
+
     # --- Array Extraction ---
 
     def test_extract_metric_arrays(self, sample_frames, mock_config):
