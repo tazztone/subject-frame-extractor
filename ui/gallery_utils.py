@@ -36,6 +36,7 @@ def _update_gallery(
     filters: dict,
     output_dir: str,
     gallery_view: str,
+    sort_by: str,
     show_overlay: bool,
     overlay_alpha: float,
     thumbnail_manager: Any,
@@ -51,7 +52,6 @@ def _update_gallery(
         A tuple containing the status text, a Gradio update object for the gallery,
         total pages count, and the page number update.
     """
-    # TODO: Add gallery sorting options (by score, time, etc.)
     kept, rejected, counts, per_frame_reasons = apply_all_filters_vectorized(
         all_frames_data, filters or {}, config, thumbnail_manager, output_dir
     )
@@ -63,8 +63,20 @@ def _update_gallery(
     status_text = " | ".join(status_parts)
     frames_to_show = rejected if gallery_view == "Rejected" else kept
 
+    if sort_by == "Score (Desc)":
+        frames_to_show = sorted(
+            frames_to_show, key=lambda x: (x.get("metrics") or {}).get("quality_score") or 0, reverse=True
+        )
+    elif sort_by == "Score (Asc)":
+        frames_to_show = sorted(frames_to_show, key=lambda x: (x.get("metrics") or {}).get("quality_score") or 0)
+    elif sort_by == "Time (Asc)":
+        frames_to_show = sorted(frames_to_show, key=lambda x: x.get("filename", ""))
+    elif sort_by == "Time (Desc)":
+        frames_to_show = sorted(frames_to_show, key=lambda x: x.get("filename", ""), reverse=True)
+
     total_frames = len(frames_to_show)
     import math
+
     total_pages = max(1, math.ceil(total_frames / page_size))
 
     # Ensure page is within bounds
@@ -105,7 +117,12 @@ def _update_gallery(
     page_choices = [str(i) for i in range(1, total_pages + 1)]
     page_update = gr.update(choices=page_choices, value=str(page))
     pages_label_update = f"/ {total_pages} pages"
-    return status_text, gr.update(value=preview_images, rows=1 if gallery_view == "Rejected Frames" else 2), pages_label_update, page_update
+    return (
+        status_text,
+        gr.update(value=preview_images, rows=1 if gallery_view == "Rejected Frames" else 2),
+        pages_label_update,
+        page_update,
+    )
 
 
 def on_filters_changed(event: FilterEvent, thumbnail_manager: Any, config: Any, logger: Any) -> dict:
@@ -115,7 +132,12 @@ def on_filters_changed(event: FilterEvent, thumbnail_manager: Any, config: Any, 
     Re-filters data and updates the gallery view.
     """
     if not event.all_frames_data:
-        return {"filter_status_text": "Run analysis to see results.", "results_gallery": [], "filter_total_pages_label": "/ 1 pages", "filter_page_number_input": gr.update(choices=["1"], value="1")}
+        return {
+            "filter_status_text": "Run analysis to see results.",
+            "results_gallery": [],
+            "filter_total_pages_label": "/ 1 pages",
+            "filter_page_number_input": gr.update(choices=["1"], value="1"),
+        }
     filters: dict[str, Any] = event.slider_values.copy()
     filters.update(
         {
@@ -132,6 +154,7 @@ def on_filters_changed(event: FilterEvent, thumbnail_manager: Any, config: Any, 
         filters,
         event.output_dir,
         event.gallery_view,
+        event.sort_by,
         event.show_overlay,
         event.overlay_alpha,
         thumbnail_manager,
@@ -140,7 +163,12 @@ def on_filters_changed(event: FilterEvent, thumbnail_manager: Any, config: Any, 
         page=event.page,
         page_size=event.page_size,
     )
-    return {"filter_status_text": status_text, "results_gallery": gallery_update, "filter_total_pages_label": pages_label_update, "filter_page_number_input": page_update}
+    return {
+        "filter_status_text": status_text,
+        "results_gallery": gallery_update,
+        "filter_total_pages_label": pages_label_update,
+        "filter_page_number_input": page_update,
+    }
 
 
 def auto_set_thresholds(per_metric_values: dict, p: int, slider_keys: list[str], selected_metrics: list[str]) -> dict:

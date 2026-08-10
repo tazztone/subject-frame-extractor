@@ -1013,6 +1013,7 @@ class AppUI:
         fast_filter_inputs = [
             c["application_state"],
             c["gallery_view_toggle"],
+            c["gallery_sort_dropdown"],
             c["show_mask_overlay_input"],
             c["overlay_alpha_slider"],
             c["require_face_match_input"],
@@ -1022,19 +1023,19 @@ class AppUI:
         ] + slider_comps
         fast_filter_outputs = [c["filter_status_text"], c["results_gallery"], c["filter_total_pages_label"], c["filter_page_number_input"]]
 
-        def on_filter_next_page(state, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, current_page, *slider_values):
+        def on_filter_next_page(state, gallery_view, sort_by, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, current_page, *slider_values):
             try:
                 page = int(current_page) + 1
             except Exception:
                 page = 1
-            return self.filtering_handler.on_filters_changed_wrapper(state, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, str(page), *slider_values)
+            return self.filtering_handler.on_filters_changed_wrapper(state, gallery_view, sort_by, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, str(page), *slider_values)
 
-        def on_filter_prev_page(state, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, current_page, *slider_values):
+        def on_filter_prev_page(state, gallery_view, sort_by, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, current_page, *slider_values):
             try:
                 page = max(1, int(current_page) - 1)
             except Exception:
                 page = 1
-            return self.filtering_handler.on_filters_changed_wrapper(state, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, str(page), *slider_values)
+            return self.filtering_handler.on_filters_changed_wrapper(state, gallery_view, sort_by, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, str(page), *slider_values)
 
         c["filter_next_page_button"].click(
             on_filter_next_page,
@@ -1048,8 +1049,8 @@ class AppUI:
             fast_filter_outputs
         )
 
-        def on_filter_page_change(state, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, current_page, *slider_values):
-            return self.filtering_handler.on_filters_changed_wrapper(state, gallery_view, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, current_page, *slider_values)
+        def on_filter_page_change(state, gallery_view, sort_by, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, current_page, *slider_values):
+            return self.filtering_handler.on_filters_changed_wrapper(state, gallery_view, sort_by, show_overlay, overlay_alpha, require_face_match, dedup_thresh, dedup_method_ui, current_page, *slider_values)
 
         c["filter_page_number_input"].change(
             on_filter_page_change,
@@ -1072,6 +1073,7 @@ class AppUI:
         for control in slider_comps + [
             c["dedup_thresh_input"],
             c["gallery_view_toggle"],
+            c["gallery_sort_dropdown"],
             c["show_mask_overlay_input"],
             c["overlay_alpha_slider"],
             c["require_face_match_input"],

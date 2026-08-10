@@ -1297,6 +1297,9 @@ def test_main_keyboard_interrupt(): ...
 def test_main_exception(): ...
 def test_parse_args_extended(): ...
 def test_parse_args_defaults_extended(): ...
+def test_main_init_exception(capsys): ...
+def test_onnxruntime_import_error():
+    """Test graceful handling when onnxruntime is missing."""
 ```
 
 ### `📄 tests/unit/test_app_ui_logic.py`
@@ -1495,6 +1498,20 @@ def test_config_path_validation(mock_unlink, mock_touch, mock_mkdir):
 @patch('core.config.Path.touch')
 def test_config_path_validation_failure(mock_touch, mock_mkdir):
     """Test that Config handles directory writability failures gracefully (prints wa..."""
+@patch('core.config.Path.mkdir')
+@patch('core.config.Path.touch')
+def test_config_path_validation_failure_oserror_touch(mock_touch, mock_mkdir):
+    """Test that Config handles directory writability failures gracefully when touch..."""
+@patch('core.config.Path.mkdir')
+@patch('core.config.Path.touch')
+@patch('core.config.Path.unlink')
+def test_config_path_validation_failure_unlink_permission(mock_unlink, mock_touch, mock_mkdir):
+    """Test that Config handles directory writability failures gracefully when unlin..."""
+@patch('core.config.Path.mkdir')
+@patch('core.config.Path.touch')
+@patch('core.config.Path.unlink')
+def test_config_path_validation_failure_unlink_oserror(mock_unlink, mock_touch, mock_mkdir):
+    """Test that Config handles directory writability failures gracefully when unlin..."""
 def test_config_json_source():
     """Test loading configuration from a JSON file."""
 def test_quality_weights_property():
@@ -1515,6 +1532,8 @@ def test_json_config_settings_source_file_not_found():
     """Test JSON config source when file does not exist."""
 def test_json_config_settings_source_json_error():
     """Test JSON config source when JSON is invalid."""
+def test_json_config_settings_source_file_not_found_exception():
+    """Test JSON config source when file is not found while reading."""
 ```
 
 ### `📄 tests/unit/test_context.py`
@@ -3416,6 +3435,8 @@ def test_check_paths_and_assets(): ...
 def test_generate_full_diagnostic_report(): ...
 def test_check_environment_torch_exception(): ...
 def test_simulate_pipeline_success(tmp_path): ...
+def test_memory_watchdog_start_enabled(): ...
+def test_memory_watchdog_start_disabled(): ...
 ```
 
 ### `📄 tests/unit/test_tracker_registry.py`

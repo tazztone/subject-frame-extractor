@@ -33,6 +33,7 @@ class TestGalleryUtils:
             filters,
             output_dir,
             gallery_view,
+            "Score (Desc)",
             False,
             0.5,
             mock_thumbnail_manager,
@@ -57,7 +58,7 @@ class TestGalleryUtils:
         mock_apply.return_value = (kept, rejected, MagicMock(), reasons)
 
         status, update, pages_label, page_input = _update_gallery(
-            sample_frames_data, {}, "/tmp/out", "Rejected", False, 0.5, mock_thumbnail_manager, mock_config, mock_logger
+            sample_frames_data, {}, "/tmp/out", "Rejected", "Score (Desc)", False, 0.5, mock_thumbnail_manager, mock_config, mock_logger
         )
 
         assert len(update["value"]) == 1
@@ -89,7 +90,7 @@ class TestGalleryUtils:
         mock_render.return_value = np.ones((100, 100, 3), dtype=np.uint8)
 
         status, update, pages_label, page_input = _update_gallery(
-            sample_frames_data, {}, "/tmp/out", "Kept", True, 0.5, mock_thumbnail_manager, mock_config, mock_logger
+            sample_frames_data, {}, "/tmp/out", "Kept", "Score (Desc)", True, 0.5, mock_thumbnail_manager, mock_config, mock_logger
         )
 
         mock_render.assert_called()
