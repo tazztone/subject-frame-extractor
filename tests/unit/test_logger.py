@@ -392,7 +392,7 @@ def test_app_logger_copy_log_to_output_no_session_file(tmp_path):
 
 
 def test_app_logger_copy_log_to_output_exception(tmp_path):
-    """Test copy_log_to_output catches and ignores exceptions."""
+    """Test copy_log_to_output catches and logs exceptions."""
     config = MagicMock()
     session_log_file = tmp_path / "source.log"
     session_log_file.write_text("test log content")
@@ -400,14 +400,14 @@ def test_app_logger_copy_log_to_output_exception(tmp_path):
     logger = AppLogger(config, session_log_file=session_log_file)
     output_dir = tmp_path / "output"
 
-    # Passing an invalid path or missing directory to trigger shutil.copy exception
-    # It should not raise since it has a blanket except Exception pass
-    with patch("shutil.copy", side_effect=Exception("Disk error")):
-        logger.copy_log_to_output(output_dir)
+    with patch("shutil.copy2", side_effect=IOError("Disk error")):
+        with patch.object(logger, "error") as mock_error:
+            logger.copy_log_to_output(output_dir)
+            mock_error.assert_called_once_with("Failed to copy log to output: Disk error", component="system")
 
 
 def test_app_logger_copy_log_to_output_exception_mock(tmp_path):
-    """Test copy_log_to_output handles exceptions."""
+    """Test copy_log_to_output handles exceptions and logs them."""
     config = MagicMock()
     session_log = tmp_path / "test_session.log"
     session_log.write_text("log content")
@@ -416,10 +416,11 @@ def test_app_logger_copy_log_to_output_exception_mock(tmp_path):
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    with patch("shutil.copy", side_effect=Exception("Copy failed")):
-        logger.copy_log_to_output(output_dir)
-        # Should catch and pass silently
-        assert not (output_dir / "session.log").exists()
+    with patch("shutil.copy2", side_effect=IOError("Copy failed")):
+        with patch.object(logger, "error") as mock_error:
+            logger.copy_log_to_output(output_dir)
+            mock_error.assert_called_once_with("Failed to copy log to output: Copy failed", component="system")
+            assert not (output_dir / "session.log").exists()
 
 
 def test_app_logger_copy_log_to_output_no_log_file():
@@ -427,7 +428,7 @@ def test_app_logger_copy_log_to_output_no_log_file():
     config = MagicMock()
     logger = AppLogger(config)  # no session_log_file passed
 
-    with patch("shutil.copy") as mock_copy:
+    with patch("shutil.copy2") as mock_copy:
         logger.copy_log_to_output("some_dir")
         mock_copy.assert_not_called()
 
@@ -438,7 +439,7 @@ def test_app_logger_copy_log_to_output_file_not_exists(tmp_path):
     session_log = tmp_path / "test_session.log"
     logger = AppLogger(config, session_log_file=session_log)
 
-    with patch("shutil.copy") as mock_copy:
+    with patch("shutil.copy2") as mock_copy:
         logger.copy_log_to_output("some_dir")
         mock_copy.assert_not_called()
 
