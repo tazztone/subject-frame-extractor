@@ -125,6 +125,47 @@ def test_config_path_validation_failure(mock_touch, mock_mkdir):
         mock_print.assert_any_call("WARNING: Directory readonly_dir is not writable.")
 
 
+@patch("core.config.Path.mkdir")
+@patch("core.config.Path.touch")
+def test_config_path_validation_failure_oserror_touch(mock_touch, mock_mkdir):
+    """Test that Config handles directory writability failures gracefully when touch raises OSError."""
+    mock_touch.side_effect = OSError("OS Error")
+
+    with patch("builtins.print") as mock_print:
+        cfg = Config(logs_dir="readonly_dir_oserror")
+        cfg.validate()
+        assert mock_print.called
+        mock_print.assert_any_call("WARNING: Directory readonly_dir_oserror is not writable.")
+
+
+@patch("core.config.Path.mkdir")
+@patch("core.config.Path.touch")
+@patch("core.config.Path.unlink")
+def test_config_path_validation_failure_unlink_permission(mock_unlink, mock_touch, mock_mkdir):
+    """Test that Config handles directory writability failures gracefully when unlink raises PermissionError."""
+    mock_unlink.side_effect = PermissionError("No permission")
+
+    with patch("builtins.print") as mock_print:
+        cfg = Config(logs_dir="readonly_dir_unlink_perm")
+        cfg.validate()
+        assert mock_print.called
+        mock_print.assert_any_call("WARNING: Directory readonly_dir_unlink_perm is not writable.")
+
+
+@patch("core.config.Path.mkdir")
+@patch("core.config.Path.touch")
+@patch("core.config.Path.unlink")
+def test_config_path_validation_failure_unlink_oserror(mock_unlink, mock_touch, mock_mkdir):
+    """Test that Config handles directory writability failures gracefully when unlink raises OSError."""
+    mock_unlink.side_effect = OSError("OS Error")
+
+    with patch("builtins.print") as mock_print:
+        cfg = Config(logs_dir="readonly_dir_unlink_os")
+        cfg.validate()
+        assert mock_print.called
+        mock_print.assert_any_call("WARNING: Directory readonly_dir_unlink_os is not writable.")
+
+
 def test_config_json_source():
     """Test loading configuration from a JSON file."""
     import json
