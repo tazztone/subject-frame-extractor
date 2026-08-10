@@ -266,3 +266,21 @@ def test_atomic_write_text_cleanup_on_error(mock_replace, tmp_path):
     temp_files = list(tmp_path.glob("*.tmp"))
     assert len(temp_files) == 0
     assert not target.exists()
+
+
+@patch("os.replace")
+def test_atomic_write_text_cleanup_temp_missing(mock_replace, tmp_path):
+    def fake_replace(src, dst):
+        import os
+        os.remove(src)  # delete it so exists() is false
+        raise OSError("Permission denied")
+
+    mock_replace.side_effect = fake_replace
+    target = tmp_path / "test.txt"
+    content = "content that fails to write"
+
+    with pytest.raises(OSError, match="Permission denied"):
+        atomic_write_text(target, content)
+
+    # verify that the target does not exist
+    assert not target.exists()
