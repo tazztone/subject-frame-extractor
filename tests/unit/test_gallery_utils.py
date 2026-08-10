@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 
 from core.events import FilterEvent
-from ui.gallery_utils import _update_gallery, auto_set_thresholds, on_filters_changed
+from ui.gallery_utils import _update_gallery, auto_set_thresholds, clear_mask_cache, on_filters_changed
 
 
 class TestGalleryUtils:
@@ -170,3 +170,10 @@ class TestGalleryUtils:
     def test_auto_set_thresholds_empty(self):
         updates = auto_set_thresholds({}, 50, ["k"], [])
         assert "value" not in updates["slider_k"]
+
+    # --- clear_mask_cache ---
+
+    @patch("ui.gallery_utils._load_mask_cached.cache_clear")
+    def test_clear_mask_cache(self, mock_cache_clear):
+        clear_mask_cache()
+        mock_cache_clear.assert_called_once()
