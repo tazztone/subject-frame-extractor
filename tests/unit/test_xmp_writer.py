@@ -51,3 +51,41 @@ def test_write_xmp_sidecar_fail(tmp_path):
     source_path = Path("/nonexistent/test.jpg")
     result = write_xmp_sidecar(source_path, 1, "Red")
     assert result is None
+
+
+from unittest.mock import patch
+
+def test_write_xmp_sidecar_atomic_replace_fail(tmp_path):
+    """Test handling of failure during atomic replace and cleanup."""
+    source_path = tmp_path / "test_replace_fail.jpg"
+    source_path.touch()
+
+    # Mock os.replace to raise an exception
+    with patch("core.xmp_writer.os.replace", side_effect=OSError("Mocked Replace Failure")):
+        # Execute the function
+        result = write_xmp_sidecar(source_path, 3, "Yellow")
+
+    # Assert that the function handled the exception and returned None
+    assert result is None
+
+    # Assert that cleanup occurred: no temp files should remain in the directory
+    temp_files = list(tmp_path.glob("*.tmp*"))
+    assert len(temp_files) == 0
+
+
+def test_write_xmp_sidecar_write_fail(tmp_path):
+    """Test handling of failure during ET.ElementTree.write and cleanup."""
+    source_path = tmp_path / "test_write_fail.jpg"
+    source_path.touch()
+
+    # Mock ET.ElementTree.write to raise an exception
+    with patch("core.xmp_writer.ET.ElementTree.write", side_effect=OSError("Mocked Write Failure")):
+        # Execute the function
+        result = write_xmp_sidecar(source_path, 3, "Yellow")
+
+    # Assert that the function handled the exception and returned None
+    assert result is None
+
+    # Assert that cleanup occurred: no temp files should remain in the directory
+    temp_files = list(tmp_path.glob("*.tmp*"))
+    assert len(temp_files) == 0
